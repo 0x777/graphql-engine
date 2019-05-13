@@ -33,7 +33,8 @@ import qualified Data.UUID.V4                           as UUID
 import qualified Database.PG.Query                      as Q
 import qualified Language.GraphQL.Draft.Syntax          as G
 import qualified StmContainers.Map                      as STMMap
-import qualified System.Metrics.Distribution            as Metrics
+import qualified System.Metrics.Counter                 as MetricsC
+import qualified System.Metrics.Distribution            as MetricsD
 
 import           Control.Concurrent                     (threadDelay)
 
@@ -117,19 +118,21 @@ data LiveQueriesState
 
 data RefetchMetrics
   = RefetchMetrics
-  { _rmSnapshot :: !Metrics.Distribution
-  , _rmPush     :: !Metrics.Distribution
-  , _rmQuery    :: !Metrics.Distribution
-  , _rmTotal    :: !Metrics.Distribution
+  { _rmSnapshot                :: !MetricsD.Distribution
+  , _rmPush                    :: !MetricsD.Distribution
+  , _rmQuery                   :: !MetricsD.Distribution
+  , _rmExceededRefetchInterval :: !MetricsC.Counter
+  , _rmTotal                   :: !MetricsD.Distribution
   }
 
 initRefetchMetrics :: IO RefetchMetrics
 initRefetchMetrics =
   RefetchMetrics
-  <$> Metrics.new
-  <*> Metrics.new
-  <*> Metrics.new
-  <*> Metrics.new
+  <$> MetricsD.new
+  <*> MetricsD.new
+  <*> MetricsD.new
+  <*> MetricsC.new
+  <*> MetricsD.new
 
 data ThreadState
   = ThreadState
@@ -178,24 +181,26 @@ dumpLiveQueryMap extended lqMap =
         ]
   where
     dumpReftechMetrics metrics = do
-      snapshotS <- Metrics.read $ _rmSnapshot metrics
-      queryS <- Metrics.read $ _rmQuery metrics
-      pushS <- Metrics.read $ _rmPush metrics
-      totalS <- Metrics.read $ _rmTotal metrics
+      snapshotS <- MetricsD.read $ _rmSnapshot metrics
+      queryS <- MetricsD.read $ _rmQuery metrics
+      pushS <- MetricsD.read $ _rmPush metrics
+      totalS <- MetricsD.read $ _rmTotal metrics
+      limitExceededCount <- MetricsC.read $ _rmExceededRefetchInterval metrics
       return $ J.object
         [ "snapshot" J..= dumpStats snapshotS
         , "query" J..= dumpStats queryS
         , "push" J..= dumpStats pushS
         , "total" J..= dumpStats totalS
+        , "exceeded_refetch_interval" J..= limitExceededCount
         ]
 
     dumpStats stats =
       J.object
-      [ "mean" J..= Metrics.mean stats
-      , "variance" J..= Metrics.variance stats
-      , "count" J..= Metrics.count stats
-      , "min" J..= Metrics.min stats
-      , "max" J..= Metrics.max stats
+      [ "mean" J..= MetricsD.mean stats
+      , "variance" J..= MetricsD.variance stats
+      , "count" J..= MetricsD.count stats
+      , "min" J..= MetricsD.min stats
+      , "max" J..= MetricsD.max stats
       ]
     dumpCandidates candidateMap = do
       candidates <- STM.atomically $ toListTMap candidateMap
@@ -255,9 +260,9 @@ data CandidateState
 -- and the validated, text encoded query variables
 data MxOpCtx
   = MxOpCtx
-  { _mocGroup     :: !LQGroup
-  , _mocAlias     :: !G.Alias
-  , _mocQuery     :: !Q.Query
+  { _mocGroup :: !LQGroup
+  , _mocAlias :: !G.Alias
+  , _mocQuery :: !Q.Query
   }
 
 instance J.ToJSON MxOpCtx where
@@ -346,8 +351,18 @@ addLiveQuery pgExecCtx lqState (mxOpCtx, usrVars, valQVars) onResultAction = do
   onJust handlerM $ \(handler, pollerThreadTM) -> do
     metrics <- initRefetchMetrics
     threadRef <- A.async $ forever $ do
-      pollQuery metrics batchSize pgExecCtx handler
+      procThread <- A.async $ processHandler metrics batchSize pgExecCtx handler
       threadDelay $ refetchIntervalToMicro refetchInterval
+      -- we check if the processing thread has already finished
+      procStatusM <- A.poll procThread
+      case procStatusM of
+        -- if it has then, we just return
+        Just _  -> return ()
+        -- otherwise, we record that the processing thread took
+        -- more than refetch interval
+        Nothing -> do
+          MetricsC.inc $ _rmExceededRefetchInterval metrics
+          A.wait procThread
     let threadState = ThreadState threadRef metrics
     STM.atomically $ STM.putTMVar pollerThreadTM threadState
 
@@ -487,13 +502,13 @@ chunks :: Word32 -> [a] -> [[a]]
 chunks n =
   takeWhile (not.null) . unfoldr (Just . splitAt (fromIntegral n))
 
-pollQuery
+processHandler
   :: RefetchMetrics
   -> BatchSize
   -> PGExecCtx
   -> LQHandler
   -> IO ()
-pollQuery metrics batchSize pgExecCtx handler = do
+processHandler metrics batchSize pgExecCtx handler = do
 
   procInit <- Clock.getCurrentTime
 
@@ -508,7 +523,7 @@ pollQuery metrics batchSize pgExecCtx handler = do
                         getQueryVars candidateSnapshotMap
 
   snapshotFinish <- Clock.getCurrentTime
-  Metrics.add (_rmSnapshot metrics) $
+  MetricsD.add (_rmSnapshot metrics) $
     realToFrac $ Clock.diffUTCTime snapshotFinish procInit
   flip A.mapConcurrently_ queryVarsBatches $ \queryVars -> do
     queryInit <- Clock.getCurrentTime
@@ -516,16 +531,17 @@ pollQuery metrics batchSize pgExecCtx handler = do
              liftTx $ Q.listQE defaultTxErrorHandler
              pgQuery (mkMxQueryPrepArgs queryVars) True
     queryFinish <- Clock.getCurrentTime
-    Metrics.add (_rmQuery metrics) $
+    MetricsD.add (_rmQuery metrics) $
       realToFrac $ Clock.diffUTCTime queryFinish queryInit
     let operations = getCandidateOperations candidateSnapshotMap mxRes
     -- concurrently push each unique result
     A.mapConcurrently_ (uncurry3 pushCandidateResult) operations
     pushFinish <- Clock.getCurrentTime
-    Metrics.add (_rmPush metrics) $
+    MetricsD.add (_rmPush metrics) $
       realToFrac $ Clock.diffUTCTime pushFinish queryFinish
+
   procFinish <- Clock.getCurrentTime
-  Metrics.add (_rmTotal metrics) $
+  MetricsD.add (_rmTotal metrics) $
     realToFrac $ Clock.diffUTCTime procFinish procInit
 
   where
