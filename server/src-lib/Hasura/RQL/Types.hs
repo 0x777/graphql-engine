@@ -40,6 +40,7 @@ module Hasura.RQL.Types
 import           Hasura.Db                     as R
 import           Hasura.EncJSON
 import           Hasura.Prelude
+import           Hasura.RQL.Types.Action       as R
 import           Hasura.RQL.Types.BoolExp      as R
 import           Hasura.RQL.Types.Common       as R
 import           Hasura.RQL.Types.DML          as R

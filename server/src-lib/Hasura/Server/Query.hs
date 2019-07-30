@@ -9,6 +9,7 @@ import qualified Network.HTTP.Client                as HTTP
 
 import           Hasura.EncJSON
 import           Hasura.Prelude
+import           Hasura.RQL.DDL.Action
 import           Hasura.RQL.DDL.EventTrigger
 import           Hasura.RQL.DDL.Metadata
 import           Hasura.RQL.DDL.Permission
@@ -88,6 +89,11 @@ data RQLQuery
   | RQExportMetadata !ExportMetadata
   | RQClearMetadata !ClearMetadata
   | RQReloadMetadata !ReloadMetadata
+
+  | RQCreateAction !CreateAction
+  | RQDropAction !DropAction
+  | RQCreateActionPermission !CreateActionPermission
+  | RQDropActionPermission !DropActionPermission
 
   | RQDumpInternalState !DumpInternalState
   deriving (Show, Eq, Lift)
@@ -229,6 +235,11 @@ queryNeedsReload qi = case qi of
   RQClearMetadata _               -> True
   RQReloadMetadata _              -> True
 
+  RQCreateAction _                -> True
+  RQDropAction _                  -> True
+  RQCreateActionPermission _      -> True
+  RQDropActionPermission _        -> True
+
   RQDumpInternalState _           -> False
 
   RQBulk qs                       -> any queryNeedsReload qs
@@ -298,6 +309,11 @@ runQueryM rq =
       RQClearMetadata q            -> runClearMetadata q
       RQExportMetadata q           -> runExportMetadata q
       RQReloadMetadata q           -> runReloadMetadata q
+
+      RQCreateAction q           -> runCreateAction q
+      RQDropAction q             -> runDropAction q
+      RQCreateActionPermission q -> runCreateActionPermission q
+      RQDropActionPermission q   -> runDropActionPermission q
 
       RQDumpInternalState q        -> runDumpInternalState q
 
