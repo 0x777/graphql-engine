@@ -31,12 +31,20 @@ import           Hasura.GraphQL.Validate.Field
 import           Hasura.GraphQL.Validate.Types
 import           Hasura.RQL.DML.Internal           (convPartialSQLExp,
                                                     dmlTxErrorHandler,
-                                                    sessVarFromCurrentSetting)
+                                                    sessVarFromCurrentSetting,
+                                                    sessionFromCurrentSetting)
 import           Hasura.RQL.DML.Mutation
 import           Hasura.RQL.GBoolExp               (toSQLBoolExp)
 import           Hasura.RQL.Types
 import           Hasura.SQL.Types
 import           Hasura.SQL.Value
+
+resolveValTxt :: (Applicative f) => UnresolvedVal -> f S.SQLExp
+resolveValTxt = \case
+  UVPG annPGVal -> txtConverter annPGVal
+  UVSessVar colTy sessVar -> sessVarFromCurrentSetting colTy sessVar
+  UVSession -> pure sessionFromCurrentSetting
+  UVSQL sqlExp -> pure sqlExp
 
 newtype InsResp
   = InsResp

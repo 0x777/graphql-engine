@@ -9,7 +9,6 @@ module Hasura.GraphQL.Resolve
   , txtConverter
 
   , RS.QueryRootFldUnresolved
-  , resolveValPrep
   , queryFldToSQL
   , RIntro.schemaR
   , RIntro.typeR
@@ -23,7 +22,7 @@ import qualified Language.GraphQL.Draft.Syntax     as G
 
 import           Hasura.GraphQL.Resolve.Context
 import           Hasura.Prelude
-import           Hasura.RQL.DML.Internal           (currentSession,
+import           Hasura.RQL.DML.Internal           (sessionFromCurrentSetting,
                                                     sessVarFromCurrentSetting)
 import           Hasura.RQL.Types
 import           Hasura.SQL.Types
@@ -83,7 +82,7 @@ queryFldToSQL fn fld = do
     UVPG annPGVal -> fn annPGVal
     UVSQL sqlExp  -> return sqlExp
     UVSessVar colTy sessVar -> sessVarFromCurrentSetting colTy sessVar
-    UVSession -> pure currentSession
+    UVSession -> pure sessionFromCurrentSetting
   return $ RS.toPGQuery resolvedAST
 
 mutFldToTx

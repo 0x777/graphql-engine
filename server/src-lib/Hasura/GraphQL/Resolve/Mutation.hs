@@ -27,9 +27,20 @@ import           Hasura.GraphQL.Resolve.InputValue
 import           Hasura.GraphQL.Resolve.Select     (fromSelSet)
 import           Hasura.GraphQL.Validate.Field
 import           Hasura.GraphQL.Validate.Types
+import           Hasura.RQL.DML.Internal           (sessVarFromCurrentSetting,
+                                                    sessionFromCurrentSetting)
 import           Hasura.RQL.Types
 import           Hasura.SQL.Types
 import           Hasura.SQL.Value
+
+resolveValPrep
+  :: (MonadState PrepArgs m)
+  => UnresolvedVal -> m S.SQLExp
+resolveValPrep = \case
+  UVPG annPGVal -> prepare annPGVal
+  UVSessVar colTy sessVar -> sessVarFromCurrentSetting colTy sessVar
+  UVSession -> pure sessionFromCurrentSetting
+  UVSQL sqlExp -> return sqlExp
 
 convertMutResp
   :: ( MonadReusability m, MonadError QErr m, MonadReader r m, Has FieldMap r
