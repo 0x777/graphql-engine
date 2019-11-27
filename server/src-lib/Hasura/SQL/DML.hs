@@ -529,6 +529,9 @@ data BoolExp
   | BEExp !SQLExp
   deriving (Show, Eq, Data)
 
+instance J.ToJSON BoolExp where
+  toJSON = J.toJSON . toSQLTxt
+
 -- removes extraneous 'AND true's
 simplifyBoolExp :: BoolExp -> BoolExp
 simplifyBoolExp be = case be of

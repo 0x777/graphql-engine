@@ -7,6 +7,7 @@ import qualified Data.Aeson.Extended      as J
 import qualified Data.HashMap.Strict      as HM
 import qualified Data.HashSet             as HS
 import qualified Data.Sequence            as DS
+import qualified Data.Text                as T
 
 import           Hasura.EncJSON
 import           Hasura.Prelude
@@ -155,6 +156,14 @@ buildConflictClause sessVarBldr tableInfo inpCols (OnConflict mTCol mTCons act) 
       validateInpCols inpCols updCols
       return (updFiltr, preSet)
 
+validateSessionVariables :: (UserInfoM m, QErrM m) => HS.HashSet SessVar -> m ()
+validateSessionVariables requiredSessionVariables = do
+  currentSessionVariables <- getVarNameSet . userVars <$> askUserInfo
+  let missingSessionVariables =
+        requiredSessionVariables `HS.difference` currentSessionVariables
+  unless (null missingSessionVariables) $
+    throw500 $ "missing required session variables: " <>
+    T.intercalate "," (map dquote $ toList missingSessionVariables)
 
 convInsertQuery
   :: (UserInfoM m, QErrM m, CacheRM m)
@@ -178,7 +187,7 @@ convInsertQuery objsParser sessVarBldr prepFn (InsertQuery tableName val oC mRet
   insPerm   <- askInsPermInfo tableInfo
 
   -- Check if all dependent headers are present
-  validateHeaders $ ipiRequiredHeaders insPerm
+  validateSessionVariables $ ipiUsedSessionVariables insPerm
 
   let fieldInfoMap = _tiFieldInfoMap tableInfo
       setInsVals = ipiSet insPerm
@@ -234,7 +243,7 @@ convInsQ
 convInsQ =
   liftDMLP1 .
   convInsertQuery (withPathK "objects" . decodeInsObjs)
-  sessVarFromCurrentSetting
+  sessVarValueInlined
   binRHSBuilder
 
 insertP2 :: Bool -> (InsertQueryP1, DS.Seq Q.PrepArg) -> Q.TxE QErr EncJSON

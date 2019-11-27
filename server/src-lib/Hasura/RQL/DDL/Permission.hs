@@ -58,7 +58,6 @@ import           Hasura.RQL.GBoolExp
 import           Hasura.RQL.Types
 import           Hasura.SQL.Types
 
-import qualified Database.PG.Query                  as Q
 import qualified Hasura.SQL.DML                     as S
 
 import           Data.Aeson
@@ -68,7 +67,9 @@ import           Language.Haskell.TH.Syntax         (Lift)
 
 import qualified Data.HashMap.Strict                as HM
 import qualified Data.HashSet                       as HS
+import qualified Data.HashSet                       as Set
 import qualified Data.Text                          as T
+import qualified Database.PG.Query                  as Q
 
 -- Insert permission
 data InsPerm
@@ -108,7 +109,7 @@ dropView vn =
 procSetObj
   :: (QErrM m)
   => TableInfo PGColumnInfo -> Maybe ColVals
-  -> m (PreSetColsPartial, [Text], [SchemaDependency])
+  -> m (PreSetColsPartial, [SchemaDependency])
 procSetObj ti mObj = do
   (setColTups, deps) <- withPathK "set" $
     fmap unzip $ forM (HM.toList setObj) $ \(pgCol, val) -> do
@@ -117,15 +118,28 @@ procSetObj ti mObj = do
       sqlExp <- valueParser (PGTypeScalar ty) val
       let dep = mkColDep (getDepReason sqlExp) tn pgCol
       return ((pgCol, sqlExp), dep)
-  return (HM.fromList setColTups, depHeaders, deps)
+  return (HM.fromList setColTups, deps)
   where
     fieldInfoMap = _tiFieldInfoMap ti
     tn = _tiName ti
     setObj = fromMaybe mempty mObj
-    depHeaders = getDepHeadersFromVal $ Object $
-      HM.fromList $ map (first getPGColTxt) $ HM.toList setObj
-
     getDepReason = bool DRSessionVariable DROnType . isStaticValue
+
+sessVarFromCurrentSetting
+  :: PGType PGScalarType -> SessVar -> State (Set.HashSet SessVar) S.SQLExp
+sessVarFromCurrentSetting pgType sessVar = do
+  modify' (Set.insert $ T.toLower sessVar)
+  pure $ sessVarFromCurrentSetting_ pgType sessVar
+
+sessVarFromCurrentSetting_ :: PGType PGScalarType -> SessVar -> S.SQLExp
+sessVarFromCurrentSetting_ ty sessVar =
+  annotateSessionVariableValue ty sessVarVal
+  where
+    sessVarVal = S.SEOpApp (S.SQLOp "->>")
+                 [sessionFromCurrentSetting, S.SELit $ T.toLower sessVar]
+
+sessionFromCurrentSetting :: S.SQLExp
+sessionFromCurrentSetting = S.SEUnsafe "current_setting('hasura.user')::json"
 
 buildInsPermInfo
   :: (QErrM m, CacheRM m)
@@ -134,18 +148,18 @@ buildInsPermInfo
   -> m (WithDeps InsPermInfo)
 buildInsPermInfo tabInfo (PermDef rn (InsPerm chk set mCols) _) =
   withPathK "permission" $ do
-  (be, beDeps) <- withPathK "check" $
-    -- procBoolExp tn fieldInfoMap (S.QualVar "NEW") chk
-    procBoolExp tn fieldInfoMap chk
-  (setColsSQL, setHdrs, setColDeps) <- procSetObj tabInfo set
+  (be, beDeps) <- withPathK "check" $ procBoolExp tn fieldInfoMap chk
+  (setColsSQL, setColDeps) <- procSetObj tabInfo set
   void $ withPathK "columns" $ indexedForM insCols $ \col ->
          askPGType fieldInfoMap col ""
-  let fltrHeaders = getDependentHeaders chk
-      reqHdrs = fltrHeaders `union` setHdrs
-      insColDeps = map (mkColDep DRUntyped tn) insCols
+  let insColDeps = map (mkColDep DRUntyped tn) insCols
       deps = mkParentDep tn : beDeps ++ setColDeps ++ insColDeps
       insColsWithoutPresets = insCols \\ HM.keys setColsSQL
-  return (InsPermInfo (HS.fromList insColsWithoutPresets) vn be setColsSQL reqHdrs, deps)
+  let (resolvedBoolExp, sessionVariables) = flip runState mempty $
+        convAnnBoolExpPartialSQL sessVarFromCurrentSetting be
+  let resolvedSQLBoolExp = toSQLBoolExp (S.QualVar "NEW") resolvedBoolExp
+  return (InsPermInfo (HS.fromList insColsWithoutPresets)
+          vn resolvedSQLBoolExp setColsSQL sessionVariables, deps)
   where
     fieldInfoMap = _tiFieldInfoMap tabInfo
     tn = _tiName tabInfo
@@ -155,8 +169,7 @@ buildInsPermInfo tabInfo (PermDef rn (InsPerm chk set mCols) _) =
 
 buildInsInfra :: QualifiedTable -> InsPermInfo -> Q.TxE QErr ()
 buildInsInfra tn (InsPermInfo _ vn be _ _) = do
-  resolvedBoolExp <- convAnnBoolExpPartialSQL sessVarFromCurrentSetting be
-  let trigFnQ = buildInsTrigFn vn tn $ toSQLBoolExp (S.QualVar "NEW") resolvedBoolExp
+  let trigFnQ = buildInsTrigFn vn tn be
   Q.catchE defaultTxErrorHandler $ do
     -- Create the view
     Q.unitQ (buildView tn vn) () False
@@ -246,13 +259,12 @@ buildSelPermInfo tabInfo sp = withPathK "permission" $ do
 
   let deps = mkParentDep tn : beDeps ++ map (mkColDep DRUntyped tn) pgCols
              ++ map (mkComputedFieldDep DRUntyped tn) scalarComputedFields
-      depHeaders = getDependentHeaders $ spFilter sp
       mLimit = spLimit sp
 
   withPathK "limit" $ mapM_ onlyPositiveInt mLimit
 
   return ( SelPermInfo (HS.fromList pgCols) (HS.fromList computedFields)
-                        tn be mLimit allowAgg depHeaders
+                        tn be mLimit allowAgg
          , deps
          )
   where
@@ -312,7 +324,7 @@ buildUpdPermInfo tabInfo (UpdPerm colSpec set fltr) = do
   (be, beDeps) <- withPathK "filter" $
     procBoolExp tn fieldInfoMap fltr
 
-  (setColsSQL, setHeaders, setColDeps) <- procSetObj tabInfo set
+  (setColsSQL, setColDeps) <- procSetObj tabInfo set
 
   -- check if the columns exist
   void $ withPathK "columns" $ indexedForM updCols $ \updCol ->
@@ -320,11 +332,9 @@ buildUpdPermInfo tabInfo (UpdPerm colSpec set fltr) = do
 
   let updColDeps = map (mkColDep DRUntyped tn) updCols
       deps = mkParentDep tn : beDeps ++ updColDeps ++ setColDeps
-      depHeaders = getDependentHeaders fltr
-      reqHeaders = depHeaders `union` setHeaders
       updColsWithoutPreSets = updCols \\ HM.keys setColsSQL
 
-  return (UpdPermInfo (HS.fromList updColsWithoutPreSets) tn be setColsSQL reqHeaders, deps)
+  return (UpdPermInfo (HS.fromList updColsWithoutPreSets) tn be setColsSQL, deps)
 
   where
     tn = _tiName tabInfo
@@ -376,8 +386,7 @@ buildDelPermInfo tabInfo (DelPerm fltr) = do
   (be, beDeps) <- withPathK "filter" $
     procBoolExp tn fieldInfoMap  fltr
   let deps = mkParentDep tn : beDeps
-      depHeaders = getDependentHeaders fltr
-  return (DelPermInfo tn be depHeaders, deps)
+  return (DelPermInfo tn be, deps)
   where
     tn = _tiName tabInfo
     fieldInfoMap = _tiFieldInfoMap tabInfo

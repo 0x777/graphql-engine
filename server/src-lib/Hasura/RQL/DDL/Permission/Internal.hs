@@ -186,23 +186,23 @@ procBoolExp tn fieldInfoMap be = do
 isReqUserId :: T.Text -> Bool
 isReqUserId = (== "req_user_id") . T.toLower
 
-getDepHeadersFromVal :: Value -> [T.Text]
-getDepHeadersFromVal val = case val of
-  Object o -> parseObject o
-  _        -> parseOnlyString val
-  where
-    parseOnlyString v = case v of
-      (String t)
-        | isUserVar t -> [T.toLower t]
-        | isReqUserId t -> [userIdHeader]
-        | otherwise -> []
-      _ -> []
-    parseObject o =
-      concatMap getDepHeadersFromVal (M.elems o)
+-- getDepHeadersFromVal :: Value -> Set.HashSet SessVar
+-- getDepHeadersFromVal val = case val of
+--   Object o -> parseObject o
+--   _        -> parseOnlyString val
+--   where
+--     parseOnlyString v = case v of
+--       (String t)
+--         | isUserVar t -> Set.singleton $ T.toLower t
+--         | isReqUserId t -> Set.singleton userIdHeader
+--         | otherwise -> mempty
+--       _ -> mempty
+--     parseObject o =
+--       foldMap getDepHeadersFromVal (M.elems o)
 
-getDependentHeaders :: BoolExp -> [T.Text]
-getDependentHeaders (BoolExp boolExp) =
-  flip foldMap boolExp $ \(ColExp _ v) -> getDepHeadersFromVal v
+-- getDependentHeaders :: BoolExp -> Set.HashSet SessVar
+-- getDependentHeaders (BoolExp boolExp) =
+--   flip foldMap boolExp $ \(ColExp _ v) -> getDepHeadersFromVal v
 
 valueParser
   :: (MonadError QErr m)

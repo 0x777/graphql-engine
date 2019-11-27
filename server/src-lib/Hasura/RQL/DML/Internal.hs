@@ -16,7 +16,6 @@ import           Data.Aeson.Types
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet        as HS
 import qualified Data.Sequence       as DS
-import qualified Data.Text           as T
 
 newtype DMLP1 a
   = DMLP1 {unDMLP1 :: StateT (DS.Seq Q.PrepArg) P1 a}
@@ -51,11 +50,12 @@ mkAdminRolePermInfo ti =
                      getComputedFieldInfos fields
 
     tn = _tiName ti
-    i = InsPermInfo (HS.fromList pgCols) tn annBoolExpTrue M.empty []
-    s = SelPermInfo (HS.fromList pgCols) (HS.fromList scalarComputedFields) tn annBoolExpTrue
-        Nothing True []
-    u = UpdPermInfo (HS.fromList pgCols) tn annBoolExpTrue M.empty []
-    d = DelPermInfo tn annBoolExpTrue []
+    i = InsPermInfo (HS.fromList pgCols) tn (S.BELit True) M.empty mempty
+    s = SelPermInfo (HS.fromList pgCols) (HS.fromList scalarComputedFields)
+        tn annBoolExpTrue
+        Nothing True
+    u = UpdPermInfo (HS.fromList pgCols) tn annBoolExpTrue M.empty
+    d = DelPermInfo tn annBoolExpTrue
 
 askPermInfo'
   :: (UserInfoM m)
@@ -218,23 +218,22 @@ convPartialSQLExp f = \case
   PSESQLExp sqlExp -> pure sqlExp
   PSESessVar colTy sessVar -> f colTy sessVar
 
-sessVarFromCurrentSetting
-  :: (Applicative f) => PGType PGScalarType -> SessVar -> f S.SQLExp
-sessVarFromCurrentSetting pgType sessVar =
-  pure $ sessVarFromCurrentSetting' pgType sessVar
-
-sessVarFromCurrentSetting' :: PGType PGScalarType -> SessVar -> S.SQLExp
-sessVarFromCurrentSetting' ty sessVar =
+annotateSessionVariableValue :: PGType PGScalarType -> S.SQLExp -> S.SQLExp
+annotateSessionVariableValue ty sessionVariableValueExpression =
   flip S.SETyAnn (S.mkTypeAnn ty) $
   case ty of
-    PGTypeScalar baseTy -> withConstructorFn baseTy sessVarVal
-    PGTypeArray _       -> sessVarVal
-  where
-    sessVarVal = S.SEOpApp (S.SQLOp "->>")
-                 [sessionFromCurrentSetting, S.SELit $ T.toLower sessVar]
+    PGTypeScalar baseTy -> withConstructorFn baseTy sessionVariableValueExpression
+    PGTypeArray _       -> sessionVariableValueExpression
 
-sessionFromCurrentSetting :: S.SQLExp
-sessionFromCurrentSetting = S.SEUnsafe "current_setting('hasura.user')::json"
+sessVarValueInlined
+  :: (MonadError QErr m, UserInfoM m)
+  => PGType PGScalarType -> SessVar -> m S.SQLExp
+sessVarValueInlined pgType sessVar = do
+  sessionVariableValueRawM <- getVarVal sessVar . userVars <$> askUserInfo
+  case sessionVariableValueRawM of
+    Nothing -> throw500 $ sessVar <<> " session variable is required, but not found"
+    Just sessionVariableValueRaw ->
+      pure $ annotateSessionVariableValue pgType $ S.SELit sessionVariableValueRaw
 
 checkSelPerm
   :: (UserInfoM m, QErrM m, CacheRM m)
@@ -288,14 +287,6 @@ toJSONableExp strfyNum colTy asText expn
   | asText || (isScalarColumnWhere isBigNum colTy && strfyNum) =
     expn `S.SETyAnn` S.textTypeAnn
   | otherwise = expn
-
--- validate headers
-validateHeaders :: (UserInfoM m, QErrM m) => [T.Text] -> m ()
-validateHeaders depHeaders = do
-  headers <- getVarNames . userVars <$> askUserInfo
-  forM_ depHeaders $ \hdr ->
-    unless (hdr `elem` map T.toLower headers) $
-    throw400 NotFound $ hdr <<> " header is expected but not found"
 
 -- validate limit and offset int values
 onlyPositiveInt :: MonadError QErr m => Int -> m ()

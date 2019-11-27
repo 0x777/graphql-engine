@@ -103,7 +103,7 @@ validateCountQ
   :: (QErrM m, UserInfoM m, CacheRM m, HasSQLGenCtx m)
   => CountQuery -> m (CountQueryP1, DS.Seq Q.PrepArg)
 validateCountQ =
-  liftDMLP1 . validateCountQWith sessVarFromCurrentSetting binRHSBuilder
+  liftDMLP1 . validateCountQWith sessVarValueInlined binRHSBuilder
 
 countQToTx
   :: (QErrM m, MonadTx m)

@@ -8,8 +8,8 @@ import           Control.Lens.TH
 import           Hasura.Prelude
 
 import qualified Data.HashMap.Strict            as Map
+import qualified Data.HashSet                   as Set
 import qualified Data.Sequence                  as Seq
-import qualified Data.Text                      as T
 import qualified Language.GraphQL.Draft.Syntax  as G
 
 import           Hasura.GraphQL.Validate.Types
@@ -45,13 +45,11 @@ type MutationCtxMap = OpCtxMap MutationCtx
 data InsOpCtx
   = InsOpCtx
   { _iocTable   :: !QualifiedTable
-  , _iocHeaders :: ![T.Text]
   } deriving (Show, Eq)
 
 data SelOpCtx
   = SelOpCtx
   { _socTable   :: !QualifiedTable
-  , _socHeaders :: ![T.Text]
   , _socAllCols :: !PGColGNameMap
   , _socFilter  :: !AnnBoolExpPartialSQL
   , _socLimit   :: !(Maybe Int)
@@ -59,10 +57,9 @@ data SelOpCtx
 
 data SelPkOpCtx
   = SelPkOpCtx
-  { _spocTable   :: !QualifiedTable
-  , _spocHeaders :: ![T.Text]
-  , _spocFilter  :: !AnnBoolExpPartialSQL
-  , _spocArgMap  :: !PGColArgMap
+  { _spocTable  :: !QualifiedTable
+  , _spocFilter :: !AnnBoolExpPartialSQL
+  , _spocArgMap :: !PGColArgMap
   } deriving (Show, Eq)
 
 type FunctionArgSeq = Seq.Seq (InputArgument FunctionArgItem)
@@ -70,7 +67,6 @@ type FunctionArgSeq = Seq.Seq (InputArgument FunctionArgItem)
 data FuncQOpCtx
   = FuncQOpCtx
   { _fqocTable    :: !QualifiedTable
-  , _fqocHeaders  :: ![T.Text]
   , _fqocAllCols  :: !PGColGNameMap
   , _fqocFilter   :: !AnnBoolExpPartialSQL
   , _fqocLimit    :: !(Maybe Int)
@@ -81,7 +77,6 @@ data FuncQOpCtx
 data UpdOpCtx
   = UpdOpCtx
   { _uocTable      :: !QualifiedTable
-  , _uocHeaders    :: ![T.Text]
   , _uocAllCols    :: !PGColGNameMap
   , _uocFilter     :: !AnnBoolExpPartialSQL
   , _uocPresetCols :: !PreSetColsPartial
@@ -90,7 +85,6 @@ data UpdOpCtx
 data DelOpCtx
   = DelOpCtx
   { _docTable   :: !QualifiedTable
-  , _docHeaders :: ![T.Text]
   , _docFilter  :: !AnnBoolExpPartialSQL
   , _docAllCols :: ![PGColumnInfo]
   } deriving (Show, Eq)
@@ -180,11 +174,12 @@ data UpdPermForIns
 
 data InsCtx
   = InsCtx
-  { icView      :: !QualifiedTable
-  , icAllCols   :: !PGColGNameMap
-  , icSet       :: !PreSetColsPartial
-  , icRelations :: !RelationInfoMap
-  , icUpdPerm   :: !(Maybe UpdPermForIns)
+  { icView                     :: !QualifiedTable
+  , icRequiredSessionVariables :: !(Set.HashSet SessVar)
+  , icAllCols                  :: !PGColGNameMap
+  , icSet                      :: !PreSetColsPartial
+  , icRelations                :: !RelationInfoMap
+  , icUpdPerm                  :: !(Maybe UpdPermForIns)
   } deriving (Show, Eq)
 
 type InsCtxMap = Map.HashMap QualifiedTable InsCtx

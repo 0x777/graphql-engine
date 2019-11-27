@@ -10,13 +10,15 @@ import qualified Data.Aeson                             as J
 import qualified Data.ByteString                        as B
 import qualified Data.ByteString.Lazy                   as LBS
 import qualified Data.HashMap.Strict                    as Map
+import qualified Data.HashSet                           as Set
 import qualified Data.IntMap                            as IntMap
 import qualified Data.TByteString                       as TBS
 import qualified Data.Text                              as T
 import qualified Database.PG.Query                      as Q
 import qualified Language.GraphQL.Draft.Syntax          as G
 
-import           Control.Lens                           ((^?))
+import           Control.Lens
+import           Control.Lens.TH                        (makeLenses)
 import           Data.Has
 
 import qualified Hasura.GraphQL.Resolve                 as R
@@ -42,16 +44,18 @@ type PrepArgMap = IntMap.IntMap (Q.PrepArg, PGScalarValue)
 
 data PGPlan
   = PGPlan
-  { _ppQuery     :: !Q.Query
-  , _ppVariables :: !PlanVariables
-  , _ppPrepared  :: !PrepArgMap
+  { _ppQuery            :: !Q.Query
+  , _ppVariables        :: !PlanVariables
+  , _ppPrepared         :: !PrepArgMap
+  , _ppSessionVariables :: !(Set.HashSet SessVar)
   }
 
 instance J.ToJSON PGPlan where
-  toJSON (PGPlan q vars prepared) =
-    J.object [ "query"     J..= Q.getQueryText q
-             , "variables" J..= vars
-             , "prepared"  J..= fmap show prepared
+  toJSON (PGPlan q vars prepared sessionVariables) =
+    J.object [ "query"             J..= Q.getQueryText q
+             , "variables"         J..= vars
+             , "prepared"          J..= fmap show prepared
+             , "session_variables" J..= sessionVariables
              ]
 
 data RootFieldPlan
@@ -80,77 +84,71 @@ instance J.ToJSON ReusableQueryPlan where
              , "field_plans"     J..= fldPlans
              ]
 
-withPlan
+withUserVars
   :: (MonadError QErr m)
-  => UserVars -> PGPlan -> ReusableVariableValues -> m PreparedSql
-withPlan usrVars (PGPlan q reqVars prepMap) annVars = do
-  prepMap' <- foldM getVar prepMap (Map.toList reqVars)
-  let args = withUserVars usrVars $ IntMap.elems prepMap'
-  return $ PreparedSql q args
-  where
-    getVar accum (var, prepNo) = do
-      let varName = G.unName $ G.unVariable var
-      colVal <- onNothing (Map.lookup var annVars) $
-        throw500 $ "missing variable in annVars : " <> varName
-      let prepVal = (toBinaryValue colVal, pstValue colVal)
-      return $ IntMap.insert prepNo prepVal accum
-
--- turn the current plan into a transaction
-mkCurPlanTx
-  :: (MonadError QErr m)
-  => UserVars
-  -> FieldPlans
-  -> m (LazyRespTx, GeneratedSqlMap)
-mkCurPlanTx usrVars fldPlans = do
-  -- generate the SQL and prepared vars or the bytestring
-  resolved <- forM fldPlans $ \(alias, fldPlan) -> do
-    fldResp <- case fldPlan of
-      RFPRaw resp                      -> return $ RRRaw resp
-      RFPPostgres (PGPlan q _ prepMap) -> do
-        let args = withUserVars usrVars $ IntMap.elems prepMap
-        return $ RRSql $ PreparedSql q args
-    return (alias, fldResp)
-
-  return (mkLazyRespTx resolved, mkGeneratedSqlMap resolved)
-
-withUserVars :: UserVars -> [(Q.PrepArg, PGScalarValue)] -> [(Q.PrepArg, PGScalarValue)]
-withUserVars usrVars list =
+  => UserVars -> Set.HashSet SessVar -> [(Q.PrepArg, PGScalarValue)]
+  -> m [(Q.PrepArg, PGScalarValue)]
+withUserVars usrVars requiredSessionVariables list = do
   let usrVarsAsPgScalar = PGValJSON $ Q.JSON $ J.toJSON usrVars
       prepArg = Q.toPrepVal (Q.AltJ usrVars)
-  in (prepArg, usrVarsAsPgScalar):list
+      missingSessionVariables = requiredSessionVariables
+                                `Set.difference` getVarNameSet usrVars
+  if null missingSessionVariables
+    then pure $ (prepArg, usrVarsAsPgScalar):list
+    else throw500 $ "missing session variables: " <>
+         T.intercalate ", " (map dquote $ toList missingSessionVariables)
 
 data PlanningSt
   = PlanningSt
-  { _psArgNumber :: !Int
-  , _psVariables :: !PlanVariables
-  , _psPrepped   :: !PrepArgMap
+  { _psArgNumber        :: !Int
+  , _psVariables        :: !PlanVariables
+  , _psPrepped          :: !PrepArgMap
+  , _psSessionVariables :: !(Set.HashSet SessVar)
   }
+$(makeLenses ''PlanningSt)
 
 initPlanningSt :: PlanningSt
 initPlanningSt =
-  PlanningSt 2 Map.empty IntMap.empty
+  PlanningSt 2 mempty mempty mempty
 
 getVarArgNum :: (MonadState PlanningSt m) => G.Variable -> m Int
 getVarArgNum var = do
-  PlanningSt curArgNum vars prepped <- get
-  case Map.lookup var vars of
+  planningState <- get
+  case planningState ^.psVariables.at var of
     Just argNum -> pure argNum
     Nothing     -> do
-      put $ PlanningSt (curArgNum + 1) (Map.insert var curArgNum vars) prepped
-      pure curArgNum
+      let newVariableNumber = planningState ^. psArgNumber
+      put $ planningState
+          -- set the variable to the current arg number
+          & psVariables.at var ?~ newVariableNumber
+          -- and then bump it
+          & over psArgNumber (+1)
+      pure newVariableNumber
 
 addPrepArg
   :: (MonadState PlanningSt m)
   => Int -> (Q.PrepArg, PGScalarValue) -> m ()
-addPrepArg argNum arg = do
-  PlanningSt curArgNum vars prepped <- get
-  put $ PlanningSt curArgNum vars $ IntMap.insert argNum arg prepped
+addPrepArg argNum arg =
+  psPrepped.at argNum .= Just arg
+
+-- | In queries, the argument '$1' has the current session
+currentSession :: S.SQLExp
+currentSession = S.SEPrep 1
+
+getSessionVariableValue
+  :: (MonadState PlanningSt m)
+  => SessVar -> m S.SQLExp
+getSessionVariableValue sessionVariable = do
+  -- record the use of the session variable
+  psSessionVariables %= Set.insert (T.toLower sessionVariable)
+  return $ S.SEOpApp (S.SQLOp "->>")
+    [currentSession, S.SELit $ T.toLower sessionVariable]
 
 getNextArgNum :: (MonadState PlanningSt m) => m Int
 getNextArgNum = do
-  PlanningSt curArgNum vars prepped <- get
-  put $ PlanningSt (curArgNum + 1) vars prepped
-  return curArgNum
+  newArgumentNumber <- use psArgNumber
+  psArgNumber %= (+1)
+  pure newArgumentNumber
 
 prepareWithPlan :: (MonadState PlanningSt m) => UnresolvedVal -> m S.SQLExp
 prepareWithPlan = \case
@@ -163,17 +161,13 @@ prepareWithPlan = \case
     return $ toPrepParam argNum (pstType colVal)
 
   R.UVSessVar ty sessVar -> do
-    let sessVarVal =
-          S.SEOpApp (S.SQLOp "->>")
-          [currentSession, S.SELit $ T.toLower sessVar]
+    sessVarVal <- getSessionVariableValue sessVar
     return $ flip S.SETyAnn (S.mkTypeAnn ty) $ case ty of
       PGTypeScalar colTy -> withConstructorFn colTy sessVarVal
       PGTypeArray _      -> sessVarVal
 
   R.UVSQL sqlExp -> pure sqlExp
   R.UVSession    -> pure currentSession
-  where
-    currentSession = S.SEPrep 1
 
 queryRootName :: Text
 queryRootName = "query_root"
@@ -201,32 +195,16 @@ convertQuerySelSet initialReusability fields = do
         "__typename" -> pure $ fldPlanFromJ queryRootName
         _            -> do
           unresolvedAst <- R.queryFldToPGAST fld
-          (q, PlanningSt _ vars prepped) <- flip runStateT initPlanningSt $
+          (q, PlanningSt _ vars prepped sessionVariables) <-
+            flip runStateT initPlanningSt $
             R.traverseQueryRootFldAST prepareWithPlan unresolvedAst
-          pure . RFPPostgres $ PGPlan (R.toPGQuery q) vars prepped
+          let fieldPlan = PGPlan (R.toPGQuery q) vars prepped sessionVariables
+          pure $ RFPPostgres fieldPlan
       pure (V._fAlias fld, fldPlan)
   let varTypes = finalReusability ^? _Reusable
       reusablePlan = ReusableQueryPlan <$> varTypes <*> pure fldPlans
   (tx, sql) <- mkCurPlanTx usrVars fldPlans
   pure (tx, reusablePlan, sql)
-
--- use the existing plan and new variables to create a pg query
-queryOpFromPlan
-  :: (MonadError QErr m)
-  => UserVars
-  -> Maybe GH.VariableValues
-  -> ReusableQueryPlan
-  -> m (LazyRespTx, GeneratedSqlMap)
-queryOpFromPlan usrVars varValsM (ReusableQueryPlan varTypes fldPlans) = do
-  validatedVars <- GV.validateVariablesForReuse varTypes varValsM
-  -- generate the SQL and prepared vars or the bytestring
-  resolved <- forM fldPlans $ \(alias, fldPlan) ->
-    (alias,) <$> case fldPlan of
-      RFPRaw resp        -> return $ RRRaw resp
-      RFPPostgres pgPlan -> RRSql <$> withPlan usrVars pgPlan validatedVars
-
-  return (mkLazyRespTx resolved, mkGeneratedSqlMap resolved)
-
 
 data PreparedSql
   = PreparedSql
@@ -255,6 +233,56 @@ data ResolvedQuery
 -- SQL for cases like introspection responses. Tuple of alias to a (maybe)
 -- prepared statement
 type GeneratedSqlMap = [(G.Alias, Maybe PreparedSql)]
+
+withPlan
+  :: (MonadError QErr m)
+  => UserVars -> PGPlan -> ReusableVariableValues -> m PreparedSql
+withPlan usrVars (PGPlan q reqVars prepMap sessionVariables) annVars = do
+  prepMap' <- foldM getVar prepMap (Map.toList reqVars)
+  args <- withUserVars usrVars sessionVariables $ IntMap.elems prepMap'
+  return $ PreparedSql q args
+  where
+    getVar accum (var, prepNo) = do
+      let varName = G.unName $ G.unVariable var
+      colVal <- onNothing (Map.lookup var annVars) $
+        throw500 $ "missing variable in annVars : " <> varName
+      let prepVal = (toBinaryValue colVal, pstValue colVal)
+      return $ IntMap.insert prepNo prepVal accum
+
+-- turn the current plan into a transaction
+mkCurPlanTx
+  :: (MonadError QErr m)
+  => UserVars
+  -> FieldPlans
+  -> m (LazyRespTx, GeneratedSqlMap)
+mkCurPlanTx usrVars fldPlans = do
+  -- generate the SQL and prepared vars or the bytestring
+  resolved <- forM fldPlans $ \(alias, fldPlan) -> do
+    fldResp <- case fldPlan of
+      RFPRaw resp                      -> return $ RRRaw resp
+      RFPPostgres (PGPlan q _ prepMap sessionVariables) -> do
+        args <- withUserVars usrVars sessionVariables $ IntMap.elems prepMap
+        return $ RRSql $ PreparedSql q args
+    return (alias, fldResp)
+
+  return (mkLazyRespTx resolved, mkGeneratedSqlMap resolved)
+
+-- use the existing plan and new variables to create a pg query
+queryOpFromPlan
+  :: (MonadError QErr m)
+  => UserVars
+  -> Maybe GH.VariableValues
+  -> ReusableQueryPlan
+  -> m (LazyRespTx, GeneratedSqlMap)
+queryOpFromPlan usrVars varValsM (ReusableQueryPlan varTypes fldPlans) = do
+  validatedVars <- GV.validateVariablesForReuse varTypes varValsM
+  -- generate the SQL and prepared vars or the bytestring
+  resolved <- forM fldPlans $ \(alias, fldPlan) ->
+    (alias,) <$> case fldPlan of
+      RFPRaw resp        -> return $ RRRaw resp
+      RFPPostgres pgPlan -> RRSql <$> withPlan usrVars pgPlan validatedVars
+
+  return (mkLazyRespTx resolved, mkGeneratedSqlMap resolved)
 
 mkLazyRespTx :: [(G.Alias, ResolvedQuery)] -> LazyRespTx
 mkLazyRespTx resolved =

@@ -9,7 +9,6 @@ module Hasura.GraphQL.Resolve
   , txtConverter
 
   , RS.QueryRootFldUnresolved
-  , queryFldToSQL
   , RIntro.schemaR
   , RIntro.typeR
   ) where
@@ -17,15 +16,11 @@ module Hasura.GraphQL.Resolve
 import           Data.Has
 
 import qualified Data.HashMap.Strict               as Map
-import qualified Database.PG.Query                 as Q
 import qualified Language.GraphQL.Draft.Syntax     as G
 
 import           Hasura.GraphQL.Resolve.Context
 import           Hasura.Prelude
-import           Hasura.RQL.DML.Internal           (sessionFromCurrentSetting,
-                                                    sessVarFromCurrentSetting)
 import           Hasura.RQL.Types
-import           Hasura.SQL.Types
 
 import qualified Hasura.GraphQL.Resolve.Insert     as RI
 import qualified Hasura.GraphQL.Resolve.Introspect as RIntro
@@ -33,57 +28,21 @@ import qualified Hasura.GraphQL.Resolve.Mutation   as RM
 import qualified Hasura.GraphQL.Resolve.Select     as RS
 import qualified Hasura.GraphQL.Validate           as V
 
-validateHdrs
-  :: (Foldable t, QErrM m) => UserInfo -> t Text -> m ()
-validateHdrs userInfo hdrs = do
-  let receivedVars = userVars userInfo
-  forM_ hdrs $ \hdr ->
-    unless (isJust $ getVarVal hdr receivedVars) $
-    throw400 NotFound $ hdr <<> " header is expected but not found"
-
 queryFldToPGAST
   :: ( MonadReusability m, MonadError QErr m, MonadReader r m, Has FieldMap r
-     , Has OrdByCtx r, Has SQLGenCtx r, Has UserInfo r
+     , Has OrdByCtx r, Has SQLGenCtx r
      , Has QueryCtxMap r
      )
   => V.Field
   -> m RS.QueryRootFldUnresolved
 queryFldToPGAST fld = do
   opCtx <- getOpCtx $ V._fName fld
-  userInfo <- asks getter
   case opCtx of
-    QCSelect ctx -> do
-      validateHdrs userInfo (_socHeaders ctx)
-      RS.convertSelect ctx fld
-    QCSelectPkey ctx -> do
-      validateHdrs userInfo (_spocHeaders ctx)
-      RS.convertSelectByPKey ctx fld
-    QCSelectAgg ctx -> do
-      validateHdrs userInfo (_socHeaders ctx)
-      RS.convertAggSelect ctx fld
-    QCFuncQuery ctx -> do
-      validateHdrs userInfo (_fqocHeaders ctx)
-      RS.convertFuncQuerySimple ctx fld
-    QCFuncAggQuery ctx -> do
-      validateHdrs userInfo (_fqocHeaders ctx)
-      RS.convertFuncQueryAgg ctx fld
-
-queryFldToSQL
-  :: ( MonadReusability m, MonadError QErr m, MonadReader r m, Has FieldMap r
-     , Has OrdByCtx r, Has SQLGenCtx r, Has UserInfo r
-     , Has QueryCtxMap r
-     )
-  => PrepFn m
-  -> V.Field
-  -> m Q.Query
-queryFldToSQL fn fld = do
-  pgAST <- queryFldToPGAST fld
-  resolvedAST <- flip RS.traverseQueryRootFldAST pgAST $ \case
-    UVPG annPGVal -> fn annPGVal
-    UVSQL sqlExp  -> return sqlExp
-    UVSessVar colTy sessVar -> sessVarFromCurrentSetting colTy sessVar
-    UVSession -> pure sessionFromCurrentSetting
-  return $ RS.toPGQuery resolvedAST
+    QCSelect ctx       -> RS.convertSelect ctx fld
+    QCSelectPkey ctx   -> RS.convertSelectByPKey ctx fld
+    QCSelectAgg ctx    -> RS.convertAggSelect ctx fld
+    QCFuncQuery ctx    -> RS.convertFuncQuerySimple ctx fld
+    QCFuncAggQuery ctx -> RS.convertFuncQueryAgg ctx fld
 
 mutFldToTx
   :: ( MonadReusability m
@@ -99,19 +58,11 @@ mutFldToTx
   => V.Field
   -> m RespTx
 mutFldToTx fld = do
-  userInfo <- asks getter
   opCtx <- getOpCtx $ V._fName fld
   case opCtx of
-    MCInsert ctx -> do
-      let roleName = userRole userInfo
-      validateHdrs userInfo (_iocHeaders ctx)
-      RI.convertInsert roleName (_iocTable ctx) fld
-    MCUpdate ctx -> do
-      validateHdrs userInfo (_uocHeaders ctx)
-      RM.convertUpdate ctx fld
-    MCDelete ctx -> do
-      validateHdrs userInfo (_docHeaders ctx)
-      RM.convertDelete ctx fld
+    MCInsert ctx -> RI.convertInsert (_iocTable ctx) fld
+    MCUpdate ctx -> RM.convertUpdate ctx fld
+    MCDelete ctx -> RM.convertDelete ctx fld
 
 getOpCtx
   :: ( MonadReusability m

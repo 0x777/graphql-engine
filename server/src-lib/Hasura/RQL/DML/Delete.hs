@@ -75,7 +75,7 @@ validateDeleteQWith sessVarBldr prepValBldr
   delPerm <- askDelPermInfo tableInfo
 
   -- Check if all dependent headers are present
-  validateHeaders $ dpiRequiredHeaders delPerm
+  -- validateHeaders $ dpiRequiredHeaders delPerm
 
   -- Check if select is allowed
   selPerm <- modifyErr (<> selNecessaryMsg) $
@@ -109,7 +109,7 @@ validateDeleteQ
   :: (QErrM m, UserInfoM m, CacheRM m, HasSQLGenCtx m)
   => DeleteQuery -> m (AnnDel, DS.Seq Q.PrepArg)
 validateDeleteQ =
-  liftDMLP1 . validateDeleteQWith sessVarFromCurrentSetting binRHSBuilder
+  liftDMLP1 . validateDeleteQWith sessVarValueInlined binRHSBuilder
 
 deleteQueryToTx :: Bool -> (AnnDel, DS.Seq Q.PrepArg) -> Q.TxE QErr EncJSON
 deleteQueryToTx strfyNum (u, p) =

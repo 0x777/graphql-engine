@@ -350,7 +350,7 @@ convertSelect opCtx fld =
   withPathK "selectionSet" $ QRFSimple <$>
   fromField (RS.FromTable qt) colGNameMap permFilter permLimit fld
   where
-    SelOpCtx qt _ colGNameMap permFilter permLimit = opCtx
+    SelOpCtx qt colGNameMap permFilter permLimit = opCtx
 
 convertSelectByPKey
   :: ( MonadReusability m, MonadError QErr m, MonadReader r m, Has FieldMap r
@@ -361,17 +361,21 @@ convertSelectByPKey opCtx fld =
   withPathK "selectionSet" $ QRFPk <$>
     fromFieldByPKey qt colArgMap permFilter fld
   where
-    SelPkOpCtx qt _ permFilter colArgMap = opCtx
+    SelPkOpCtx qt permFilter colArgMap = opCtx
 
 -- agg select related
-parseColumns :: (MonadReusability m, MonadError QErr m) => PGColGNameMap -> AnnInpVal -> m [PGCol]
+parseColumns
+  :: (MonadReusability m, MonadError QErr m)
+  => PGColGNameMap -> AnnInpVal -> m [PGCol]
 parseColumns allColFldMap val =
   flip withArray val $ \_ vals ->
     forM vals $ \v -> do
       (_, G.EnumValue enumVal) <- asEnumVal v
       pgiColumn <$> resolvePGCol allColFldMap enumVal
 
-convertCount :: (MonadReusability m, MonadError QErr m) => PGColGNameMap -> ArgsMap -> m S.CountType
+convertCount
+  :: (MonadReusability m, MonadError QErr m)
+  => PGColGNameMap -> ArgsMap -> m S.CountType
 convertCount colGNameMap args = do
   columnsM <- withArgM args "columns" $ parseColumns colGNameMap
   isDistinct <- or <$> withArgM args "distinct" parseDistinct
@@ -448,9 +452,8 @@ convertAggSelect
 convertAggSelect opCtx fld =
   withPathK "selectionSet" $ QRFAgg <$>
   fromAggField qt colGNameMap permFilter permLimit fld
-  -- return $ RS.selectAggQuerySQL selData
   where
-    SelOpCtx qt _ colGNameMap permFilter permLimit = opCtx
+    SelOpCtx qt colGNameMap permFilter permLimit = opCtx
 
 parseFunctionArgs
   :: (MonadReusability m, MonadError QErr m)
@@ -511,7 +514,7 @@ convertFuncQuerySimple funcOpCtx fld =
   withPathK "selectionSet" $ QRFFnSimple <$> fromFuncQueryField
     (fromField (RS.FromTable qt) colGNameMap permFilter permLimit) qf argSeq fld
   where
-    FuncQOpCtx qt _ colGNameMap permFilter permLimit qf argSeq = funcOpCtx
+    FuncQOpCtx qt colGNameMap permFilter permLimit qf argSeq = funcOpCtx
 
 convertFuncQueryAgg
   :: ( MonadReusability m
@@ -526,7 +529,7 @@ convertFuncQueryAgg funcOpCtx fld =
   withPathK "selectionSet" $ QRFFnAgg <$> fromFuncQueryField
     (fromAggField qt colGNameMap permFilter permLimit) qf argSeq fld
   where
-    FuncQOpCtx qt _ colGNameMap permFilter permLimit qf argSeq = funcOpCtx
+    FuncQOpCtx qt colGNameMap permFilter permLimit qf argSeq = funcOpCtx
 
 data QueryRootFldAST v
   = QRFPk !(RS.AnnSimpleSelG v)

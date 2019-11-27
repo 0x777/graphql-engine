@@ -27,19 +27,22 @@ import           Hasura.GraphQL.Resolve.InputValue
 import           Hasura.GraphQL.Resolve.Select     (fromSelSet)
 import           Hasura.GraphQL.Validate.Field
 import           Hasura.GraphQL.Validate.Types
-import           Hasura.RQL.DML.Internal           (sessVarFromCurrentSetting,
-                                                    sessionFromCurrentSetting)
 import           Hasura.RQL.Types
 import           Hasura.SQL.Types
 import           Hasura.SQL.Value
 
 resolveValPrep
-  :: (MonadState PrepArgs m)
+  :: ( MonadState PrepArgs m
+     , MonadReader r m
+     , Has UserInfo r
+     , MonadError QErr m
+     )
   => UnresolvedVal -> m S.SQLExp
 resolveValPrep = \case
   UVPG annPGVal -> prepare annPGVal
-  UVSessVar colTy sessVar -> sessVarFromCurrentSetting colTy sessVar
-  UVSession -> pure sessionFromCurrentSetting
+  UVSessVar colTy sessVar ->
+    embedSessionVariableValue colTy sessVar
+  UVSession -> embedAllSessionVariables
   UVSQL sqlExp -> return sqlExp
 
 convertMutResp
@@ -171,13 +174,14 @@ convertUpdateP1 opCtx fld = do
   where
     convObjWithOp' = convObjWithOp colGNameMap
     allCols = Map.elems colGNameMap
-    UpdOpCtx tn _ colGNameMap filterExp preSetCols = opCtx
+    UpdOpCtx tn colGNameMap filterExp preSetCols = opCtx
     args = _fArguments fld
 
 convertUpdate
   :: ( MonadReusability m, MonadError QErr m
      , MonadReader r m, Has FieldMap r
      , Has OrdByCtx r, Has SQLGenCtx r
+     , Has UserInfo r
      )
   => UpdOpCtx -- the update context
   -> Field -- the mutation field
@@ -199,6 +203,7 @@ convertDelete
   :: ( MonadReusability m, MonadError QErr m
      , MonadReader r m, Has FieldMap r
      , Has OrdByCtx r, Has SQLGenCtx r
+     , Has UserInfo r
      )
   => DelOpCtx -- the delete context
   -> Field -- the mutation field
@@ -215,7 +220,7 @@ convertDelete opCtx fld = do
   strfyNum <- stringifyNum <$> asks getter
   return $ RD.deleteQueryToTx strfyNum (annDelResolved, prepArgs)
   where
-    DelOpCtx tn _ filterExp allCols = opCtx
+    DelOpCtx tn filterExp allCols = opCtx
 
 -- | build mutation response for empty objects
 buildEmptyMutResp :: RR.MutFlds -> EncJSON

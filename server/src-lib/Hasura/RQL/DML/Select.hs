@@ -265,7 +265,6 @@ convSelectQuery sessVarBldr prepArgBuilder (DMLQuery qt selQ) = do
   tabInfo     <- withPathK "table" $ askTabInfo qt
   selPermInfo <- askSelPermInfo tabInfo
   extSelQ <- resolveStar (_tiFieldInfoMap tabInfo) selPermInfo selQ
-  validateHeaders $ spiRequiredHeaders selPermInfo
   convSelectQ (_tiFieldInfoMap tabInfo) selPermInfo
     extSelQ sessVarBldr prepArgBuilder
 
@@ -307,7 +306,7 @@ phaseOne
   :: (QErrM m, UserInfoM m, CacheRM m, HasSQLGenCtx m)
   => SelectQuery -> m (AnnSimpleSel, DS.Seq Q.PrepArg)
 phaseOne =
-  liftDMLP1 . convSelectQuery sessVarFromCurrentSetting binRHSBuilder
+  liftDMLP1 . convSelectQuery sessVarValueInlined binRHSBuilder
 
 phaseTwo :: (MonadTx m) => (AnnSimpleSel, DS.Seq Q.PrepArg) -> m EncJSON
 phaseTwo =

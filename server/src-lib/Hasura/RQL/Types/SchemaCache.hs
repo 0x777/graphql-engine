@@ -144,7 +144,9 @@ import           Language.Haskell.TH.Syntax        (Lift)
 
 import qualified Data.HashMap.Strict               as M
 import qualified Data.HashSet                      as HS
+import qualified Data.HashSet                      as Set
 import qualified Data.Text                         as T
+import qualified Hasura.SQL.DML                    as S
 import qualified Language.GraphQL.Draft.Syntax     as G
 
 reportSchemaObjs :: [SchemaObjId] -> T.Text
@@ -205,13 +207,15 @@ isPGColInfo _            = False
 
 data InsPermInfo
   = InsPermInfo
-  { ipiCols            :: !(HS.HashSet PGCol)
-  , ipiView            :: !QualifiedTable
-  , ipiCheck           :: !AnnBoolExpPartialSQL
-  , ipiSet             :: !PreSetColsPartial
-  , ipiRequiredHeaders :: ![T.Text]
+  { ipiCols                 :: !(HS.HashSet PGCol)
+  , ipiView                 :: !QualifiedTable
+  -- for insert, we don't need the unresolved boolean expression as session
+  -- variables can only be accessed with current_setting('hasura.user')
+  -- in the trigger function
+  , ipiCheck                :: !S.BoolExp
+  , ipiSet                  :: !PreSetColsPartial
+  , ipiUsedSessionVariables :: !(Set.HashSet SessVar)
   } deriving (Show, Eq)
-
 $(deriveToJSON (aesonDrop 3 snakeCase) ''InsPermInfo)
 
 data SelPermInfo
@@ -222,27 +226,24 @@ data SelPermInfo
   , spiFilter               :: !AnnBoolExpPartialSQL
   , spiLimit                :: !(Maybe Int)
   , spiAllowAgg             :: !Bool
-  , spiRequiredHeaders      :: ![T.Text]
   } deriving (Show, Eq)
 
 $(deriveToJSON (aesonDrop 3 snakeCase) ''SelPermInfo)
 
 data UpdPermInfo
   = UpdPermInfo
-  { upiCols            :: !(HS.HashSet PGCol)
-  , upiTable           :: !QualifiedTable
-  , upiFilter          :: !AnnBoolExpPartialSQL
-  , upiSet             :: !PreSetColsPartial
-  , upiRequiredHeaders :: ![T.Text]
+  { upiCols   :: !(HS.HashSet PGCol)
+  , upiTable  :: !QualifiedTable
+  , upiFilter :: !AnnBoolExpPartialSQL
+  , upiSet    :: !PreSetColsPartial
   } deriving (Show, Eq)
 
 $(deriveToJSON (aesonDrop 3 snakeCase) ''UpdPermInfo)
 
 data DelPermInfo
   = DelPermInfo
-  { dpiTable           :: !QualifiedTable
-  , dpiFilter          :: !AnnBoolExpPartialSQL
-  , dpiRequiredHeaders :: ![T.Text]
+  { dpiTable  :: !QualifiedTable
+  , dpiFilter :: !AnnBoolExpPartialSQL
   } deriving (Show, Eq)
 
 $(deriveToJSON (aesonDrop 3 snakeCase) ''DelPermInfo)

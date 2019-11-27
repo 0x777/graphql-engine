@@ -9,6 +9,7 @@ module Hasura.RQL.Types.Permission
        , mkUserVars
        , isUserVar
        , getVarNames
+       , getVarNameSet
        , getVarVal
        , roleFromVars
 
@@ -24,8 +25,8 @@ module Hasura.RQL.Types.Permission
        ) where
 
 import           Hasura.Prelude
-import           Hasura.RQL.Types.Common    (NonEmptyText, adminText, mkNonEmptyText,
-                                             unNonEmptyText)
+import           Hasura.RQL.Types.Common    (NonEmptyText, adminText,
+                                             mkNonEmptyText, unNonEmptyText)
 import           Hasura.Server.Utils        (adminSecretHeader,
                                              deprecatedAccessKeyHeader,
                                              userRoleHeader)
@@ -39,6 +40,7 @@ import           Instances.TH.Lift          ()
 import           Language.Haskell.TH.Syntax (Lift)
 
 import qualified Data.HashMap.Strict        as Map
+import qualified Data.HashSet               as Set
 import qualified Data.Text                  as T
 import qualified PostgreSQL.Binary.Decoding as PD
 
@@ -81,6 +83,10 @@ getVarVal k =
 getVarNames :: UserVars -> [T.Text]
 getVarNames =
   Map.keys . unUserVars
+
+getVarNameSet :: UserVars -> Set.HashSet SessVar
+getVarNameSet =
+  Map.keysSet . unUserVars
 
 mkUserVars :: [(T.Text, T.Text)] -> UserVars
 mkUserVars l =

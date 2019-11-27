@@ -25,6 +25,8 @@ module Hasura.GraphQL.Resolve.Context
   , withSelSet
   , fieldAsPath
   , resolvePGCol
+  , embedSessionVariableValue
+  , embedAllSessionVariables
   , module Hasura.GraphQL.Utils
   , module Hasura.GraphQL.Resolve.Types
   ) where
@@ -32,6 +34,7 @@ module Hasura.GraphQL.Resolve.Context
 import           Data.Has
 import           Hasura.Prelude
 
+import qualified Data.Aeson                    as J
 import qualified Data.HashMap.Strict           as Map
 import qualified Data.Sequence                 as Seq
 import qualified Database.PG.Query             as Q
@@ -41,6 +44,7 @@ import           Hasura.GraphQL.Resolve.Types
 import           Hasura.GraphQL.Utils
 import           Hasura.GraphQL.Validate.Field
 import           Hasura.GraphQL.Validate.Types
+import           Hasura.RQL.DML.Internal       (annotateSessionVariableValue)
 import           Hasura.RQL.Types
 import           Hasura.SQL.Types
 import           Hasura.SQL.Value
@@ -144,3 +148,27 @@ resolvePGCol :: (MonadError QErr m)
 resolvePGCol colFldMap fldName =
   onNothing (Map.lookup fldName colFldMap) $ throw500 $
   "no column associated with name " <> G.unName fldName
+
+embedSessionVariableValue
+  :: ( MonadReader r m
+     , Has UserInfo r
+     , MonadError QErr m
+     )
+  => PGType PGScalarType -> SessVar -> m S.SQLExp
+embedSessionVariableValue colTy sessVar = do
+  sessionVariableValueRawM <- getVarVal sessVar . userVars <$> asks getter
+  case sessionVariableValueRawM of
+    Nothing -> throw500 $ sessVar <<>
+               " session variable is required, but not found"
+    Just sessionVariableValueRaw ->
+      pure $ annotateSessionVariableValue colTy $
+      S.SELit sessionVariableValueRaw
+
+embedAllSessionVariables
+  :: ( MonadReader r m
+     , Has UserInfo r
+     )
+  => m S.SQLExp
+embedAllSessionVariables = do
+  sessionVariables <- userVars <$> asks getter
+  pure $ txtEncoder $ PGValJSON $ Q.JSON $ J.toJSON sessionVariables

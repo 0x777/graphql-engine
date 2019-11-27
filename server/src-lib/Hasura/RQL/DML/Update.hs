@@ -144,7 +144,7 @@ validateUpdateQueryWith sessVarBldr prepValBldr uq = do
   updPerm <- askUpdPermInfo tableInfo
 
   -- Check if all dependent headers are present
-  validateHeaders $ upiRequiredHeaders updPerm
+  -- validateHeaders $ upiRequiredHeaders updPerm
 
   -- Check if select is allowed
   selPerm <- modifyErr (<> selNecessaryMsg) $
@@ -205,7 +205,7 @@ validateUpdateQuery
   :: (QErrM m, UserInfoM m, CacheRM m, HasSQLGenCtx m)
   => UpdateQuery -> m (AnnUpd, DS.Seq Q.PrepArg)
 validateUpdateQuery =
-  liftDMLP1 . validateUpdateQueryWith sessVarFromCurrentSetting binRHSBuilder
+  liftDMLP1 . validateUpdateQueryWith sessVarValueInlined binRHSBuilder
 
 updateQueryToTx
   :: Bool -> (AnnUpd, DS.Seq Q.PrepArg) -> Q.TxE QErr EncJSON

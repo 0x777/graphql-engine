@@ -22,8 +22,6 @@ import           Control.Lens.Extended                 hiding (op)
 import qualified Data.HashMap.Strict                   as Map
 import qualified Data.HashSet                          as Set
 import qualified Data.Sequence                         as Seq
-
-import qualified Data.Text                             as T
 import qualified Language.GraphQL.Draft.Syntax         as G
 
 import           Hasura.GraphQL.Context
@@ -323,10 +321,10 @@ getRootFldsRole'
   -> [ConstraintName]
   -> FieldInfoMap PGColumnInfo
   -> [FunctionInfo]
-  -> Maybe ([T.Text], Bool) -- insert perm
-  -> Maybe (AnnBoolExpPartialSQL, Maybe Int, [T.Text], Bool) -- select filter
-  -> Maybe ([PGColumnInfo], PreSetColsPartial, AnnBoolExpPartialSQL, [T.Text]) -- update filter
-  -> Maybe (AnnBoolExpPartialSQL, [T.Text]) -- delete filter
+  -> Maybe Bool -- insert perm
+  -> Maybe (AnnBoolExpPartialSQL, Maybe Int, Bool) -- select filter
+  -> Maybe ([PGColumnInfo], PreSetColsPartial, AnnBoolExpPartialSQL) -- update filter
+  -> Maybe AnnBoolExpPartialSQL -- delete filter
   -> Maybe ViewInfo
   -> TableConfig -- custom config
   -> RootFields
@@ -363,58 +361,58 @@ getRootFldsRole' tn primCols constraints fields funcs insM
     getCustomNameWith f = f customRootFields
 
     insCustName = getCustomNameWith _tcrfInsert
-    getInsDet (hdrs, upsertPerm) =
+    getInsDet upsertPerm =
       let isUpsertable = upsertable constraints upsertPerm $ isJust viM
-      in ( MCInsert $ InsOpCtx tn $ hdrs `union` maybe [] (\(_, _, _, x) -> x) updM
+      in ( MCInsert $ InsOpCtx tn
          , mkInsMutFld insCustName tn isUpsertable
          )
 
     updCustName = getCustomNameWith _tcrfUpdate
-    getUpdDet (updCols, preSetCols, updFltr, hdrs) =
-      ( MCUpdate $ UpdOpCtx tn hdrs colGNameMap updFltr preSetCols
+    getUpdDet (updCols, preSetCols, updFltr) =
+      ( MCUpdate $ UpdOpCtx tn colGNameMap updFltr preSetCols
       , mkUpdMutFld updCustName tn updCols
       )
 
     delCustName = getCustomNameWith _tcrfDelete
-    getDelDet (delFltr, hdrs) =
-      ( MCDelete $ DelOpCtx tn hdrs delFltr allCols
+    getDelDet delFltr =
+      ( MCDelete $ DelOpCtx tn delFltr allCols
       , mkDelMutFld delCustName tn
       )
 
 
     selCustName = getCustomNameWith _tcrfSelect
-    getSelDet (selFltr, pLimit, hdrs, _) =
-      selFldHelper QCSelect (mkSelFld selCustName) selFltr pLimit hdrs
+    getSelDet (selFltr, pLimit, _) =
+      selFldHelper QCSelect (mkSelFld selCustName) selFltr pLimit
 
     selAggCustName = getCustomNameWith _tcrfSelectAggregate
-    getSelAggDet (Just (selFltr, pLimit, hdrs, True)) =
+    getSelAggDet (Just (selFltr, pLimit, True)) =
       Just $ selFldHelper QCSelectAgg (mkAggSelFld selAggCustName)
-               selFltr pLimit hdrs
+               selFltr pLimit
     getSelAggDet _                                    = Nothing
 
-    selFldHelper f g pFltr pLimit hdrs =
-      ( f $ SelOpCtx tn hdrs colGNameMap pFltr pLimit
+    selFldHelper f g pFltr pLimit =
+      ( f $ SelOpCtx tn colGNameMap pFltr pLimit
       , g tn
       )
 
     selByPkCustName = getCustomNameWith _tcrfSelectByPk
     getPKeySelDet Nothing _ = Nothing
     getPKeySelDet _ [] = Nothing
-    getPKeySelDet (Just (selFltr, _, hdrs, _)) pCols = Just
-      ( QCSelectPkey . SelPkOpCtx tn hdrs selFltr $ mkPGColGNameMap pCols
+    getPKeySelDet (Just (selFltr, _, _)) pCols = Just
+      ( QCSelectPkey . SelPkOpCtx tn selFltr $ mkPGColGNameMap pCols
       , mkSelFldPKey selByPkCustName tn pCols
       )
 
-    getFuncQueryFlds (selFltr, pLimit, hdrs, _) =
-      funcFldHelper QCFuncQuery mkFuncQueryFld selFltr pLimit hdrs
+    getFuncQueryFlds (selFltr, pLimit, _) =
+      funcFldHelper QCFuncQuery mkFuncQueryFld selFltr pLimit
 
-    getFuncAggQueryFlds (selFltr, pLimit, hdrs, True) =
-      funcFldHelper QCFuncAggQuery mkFuncAggQueryFld selFltr pLimit hdrs
+    getFuncAggQueryFlds (selFltr, pLimit, True) =
+      funcFldHelper QCFuncAggQuery mkFuncAggQueryFld selFltr pLimit
     getFuncAggQueryFlds _                             = []
 
-    funcFldHelper f g pFltr pLimit hdrs =
+    funcFldHelper f g pFltr pLimit =
       flip map funcs $ \fi ->
-      ( f $ FuncQOpCtx tn hdrs colGNameMap pFltr pLimit
+      ( f $ FuncQOpCtx tn colGNameMap pFltr pLimit
               (fiName fi) (mkFuncArgItemSeq fi)
       , g fi $ fiDescription fi
       )
@@ -513,7 +511,8 @@ mkInsCtx role tableCache fields insPermInfo updPermM = do
       isInsertable insPermM viewInfoM && isValidRel relName remoteTable
 
   let relInfoMap = Map.fromList $ catMaybes relTupsM
-  return $ InsCtx iView gNamePGColMap setCols relInfoMap updPermForIns
+  return $ InsCtx iView (ipiUsedSessionVariables insPermInfo)
+    gNamePGColMap setCols relInfoMap updPermForIns
   where
     gNamePGColMap = mkPGColGNameMap allCols
     allCols = getCols fields
@@ -545,7 +544,7 @@ mkAdminInsCtx tn tc fields = do
   let relInfoMap = Map.fromList $ catMaybes relTupsM
       updPerm = UpdPermForIns updCols noFilter Map.empty
 
-  return $ InsCtx tn colGNameMap Map.empty relInfoMap (Just updPerm)
+  return $ InsCtx tn mempty colGNameMap Map.empty relInfoMap (Just updPerm)
   where
     allCols = getCols fields
     colGNameMap = mkPGColGNameMap allCols
@@ -645,19 +644,16 @@ getRootFldsRole
   -> RootFields
 getRootFldsRole tn pCols constraints fields funcs viM (RolePermInfo insM selM updM delM)=
   getRootFldsRole' tn pCols constraints fields funcs
-  (mkIns <$> insM) (mkSel <$> selM)
-  (mkUpd <$> updM) (mkDel <$> delM) viM
+  (isJust updM <$ insM) (mkSel <$> selM)
+  (mkUpd <$> updM) (dpiFilter <$> delM) viM
   where
-    mkIns i = (ipiRequiredHeaders i, isJust updM)
     mkSel s = ( spiFilter s, spiLimit s
-              , spiRequiredHeaders s, spiAllowAgg s
+              , spiAllowAgg s
               )
     mkUpd u = ( flip getColInfos allCols $ Set.toList $ upiCols u
               , upiSet u
               , upiFilter u
-              , upiRequiredHeaders u
               )
-    mkDel d = (dpiFilter d, dpiRequiredHeaders d)
 
     allCols = getCols fields
 
@@ -689,8 +685,8 @@ mkGCtxMapTable tableCache funcCache tabInfo = do
                getFuncsOfTable tn funcCache
     adminRootFlds =
       getRootFldsRole' tn pkeyColInfos validConstraints fields tabFuncs
-      (Just ([], True)) (Just (noFilter, Nothing, [], True))
-      (Just (cols, mempty, noFilter, [])) (Just (noFilter, []))
+      (Just True) (Just (noFilter, Nothing, True))
+      (Just (cols, mempty, noFilter)) (Just noFilter)
       viewInfo customConfig
 
 noFilter :: AnnBoolExpPartialSQL
@@ -851,7 +847,7 @@ mkGCtx tyAgg (RootFields queryFields mutationFields) insCtxMap =
     additionalScalars =
       Set.fromList
         -- raster comparison expression needs geometry input
-      (guard anyRasterTypes *> pure PGGeometry)
+      (guard anyRasterTypes $> PGGeometry)
 
     allScalarTypes = (allComparableTypes ^.. folded._PGColumnScalar)
                      <> additionalScalars <> scalars

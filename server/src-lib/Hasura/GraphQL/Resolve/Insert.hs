@@ -12,6 +12,7 @@ import qualified Data.Aeson.Casing                 as J
 import qualified Data.Aeson.TH                     as J
 import qualified Data.HashMap.Strict               as Map
 import qualified Data.HashMap.Strict.InsOrd        as OMap
+import qualified Data.HashSet                      as Set
 import qualified Data.Sequence                     as Seq
 import qualified Data.Text                         as T
 import qualified Language.GraphQL.Draft.Syntax     as G
@@ -30,20 +31,21 @@ import           Hasura.GraphQL.Resolve.Select
 import           Hasura.GraphQL.Validate.Field
 import           Hasura.GraphQL.Validate.Types
 import           Hasura.RQL.DML.Internal           (convPartialSQLExp,
-                                                    dmlTxErrorHandler,
-                                                    sessVarFromCurrentSetting,
-                                                    sessionFromCurrentSetting)
+                                                    dmlTxErrorHandler)
 import           Hasura.RQL.DML.Mutation
 import           Hasura.RQL.GBoolExp               (toSQLBoolExp)
 import           Hasura.RQL.Types
 import           Hasura.SQL.Types
 import           Hasura.SQL.Value
 
-resolveValTxt :: (Applicative f) => UnresolvedVal -> f S.SQLExp
+resolveValTxt
+  :: ( MonadReader r m, Has UserInfo r, MonadError QErr m)
+  => UnresolvedVal -> m S.SQLExp
 resolveValTxt = \case
   UVPG annPGVal -> txtConverter annPGVal
-  UVSessVar colTy sessVar -> sessVarFromCurrentSetting colTy sessVar
-  UVSession -> pure sessionFromCurrentSetting
+  UVSessVar colTy sessVar ->
+    embedSessionVariableValue colTy sessVar
+  UVSession -> embedAllSessionVariables
   UVSQL sqlExp -> pure sqlExp
 
 newtype InsResp
@@ -95,7 +97,10 @@ data AnnInsObj
   } deriving (Show, Eq)
 
 mkAnnInsObj
-  :: (MonadReusability m, MonadError QErr m, Has InsCtxMap r, MonadReader r m, Has FieldMap r)
+  :: ( MonadReusability m
+     , MonadReader r m,  Has InsCtxMap r,  Has FieldMap r, Has UserInfo r
+     , MonadError QErr m
+     )
   => RelationInfoMap
   -> PGColGNameMap
   -> AnnGObject
@@ -106,7 +111,10 @@ mkAnnInsObj relInfoMap allColMap annObj =
     emptyInsObj = AnnInsObj [] [] []
 
 traverseInsObj
-  :: (MonadReusability m, MonadError QErr m, Has InsCtxMap r, MonadReader r m, Has FieldMap r)
+  :: ( MonadReusability m
+     , MonadReader r m,  Has InsCtxMap r,  Has FieldMap r, Has UserInfo r
+     , MonadError QErr m
+     )
   => RelationInfoMap
   -> PGColGNameMap
   -> (G.Name, AnnInpVal)
@@ -140,9 +148,9 @@ traverseInsObj rim allColMap (gName, annVal) defVal@(AnnInsObj cols objRels arrR
                    throw500 $ "relation " <> relName <<> " not found"
 
         let rTable = riRTable relInfo
-        InsCtx rtView rtColMap rtDefVals rtRelInfoMap rtUpdPerm <- getInsCtx rTable
+        InsCtx rtView _ rtColMap rtDefVals rtRelInfoMap rtUpdPerm <- getInsCtx rTable
         let rtCols = Map.elems rtColMap
-        rtDefValsRes <- mapM (convPartialSQLExp sessVarFromCurrentSetting) rtDefVals
+        rtDefValsRes <- mapM (convPartialSQLExp embedSessionVariableValue) rtDefVals
 
         withPathK (G.unName gName) $ case riType relInfo of
           ObjRel -> do
@@ -169,7 +177,10 @@ traverseInsObj rim allColMap (gName, annVal) defVal@(AnnInsObj cols objRels arrR
             bool withNonEmptyArrData (return defVal) $ null arrDataVals
 
 parseOnConflict
-  :: (MonadReusability m, MonadError QErr m, MonadReader r m, Has FieldMap r)
+  :: ( MonadReusability m
+     , MonadReader r m, Has FieldMap r, Has UserInfo r
+     , MonadError QErr m
+     )
   => QualifiedTable
   -> Maybe UpdPermForIns
   -> PGColGNameMap
@@ -184,9 +195,9 @@ parseOnConflict tn updFiltrM allColMap val = withPathK "on_conflict" $
       _  -> do
           UpdPermForIns _ updFiltr preSet <- onNothing updFiltrM $ throw500
             "cannot update columns since update permission is not defined"
-          preSetRes <- mapM (convPartialSQLExp sessVarFromCurrentSetting) preSet
+          preSetRes <- mapM (convPartialSQLExp embedSessionVariableValue) preSet
           updFltrRes <- traverseAnnBoolExp
-                        (convPartialSQLExp sessVarFromCurrentSetting)
+                        (convPartialSQLExp embedSessionVariableValue)
                         updFiltr
           whereExp <- parseWhereExp obj
           let updateBoolExp = toSQLBoolExp (S.mkQual tn) updFltrRes
@@ -504,42 +515,52 @@ prefixErrPath fld =
 
 convertInsert
   :: ( MonadReusability m, MonadError QErr m, MonadReader r m, Has FieldMap r
-     , Has OrdByCtx r, Has SQLGenCtx r, Has InsCtxMap r
+     , Has OrdByCtx r, Has SQLGenCtx r, Has InsCtxMap r, Has UserInfo r
      )
-  => RoleName
-  -> QualifiedTable -- table
+  => QualifiedTable -- table
   -> Field -- the mutation field
   -> m RespTx
-convertInsert role tn fld = prefixErrPath fld $ do
+convertInsert tn fld = prefixErrPath fld $ do
+  roleName <- asks $ userRole . getter
   mutFldsUnres <- convertMutResp (_fType fld) $ _fSelSet fld
   mutFldsRes <- RR.traverseMutFlds resolveValTxt mutFldsUnres
   annVals <- withArg arguments "objects" asArray
   -- if insert input objects is empty array then
   -- do not perform insert and return mutation response
-  bool (withNonEmptyObjs annVals mutFldsRes)
+  bool (withNonEmptyObjs roleName annVals mutFldsRes)
     (withEmptyObjs mutFldsRes) $ null annVals
   where
-    withNonEmptyObjs annVals mutFlds = do
-      InsCtx vn tableColMap defValMap relInfoMap updPerm <- getInsCtx tn
+    withNonEmptyObjs roleName annVals mutFlds = do
+      InsCtx vn _ tableColMap defValMap relInfoMap updPerm <- getInsCtx tn
       annObjs <- mapM asObject annVals
       annInsObjs <- forM annObjs $ mkAnnInsObj relInfoMap tableColMap
       conflictClauseM <- forM onConflictM $ parseOnConflict tn updPerm tableColMap
-      defValMapRes <- mapM (convPartialSQLExp sessVarFromCurrentSetting)
+      defValMapRes <- mapM (convPartialSQLExp embedSessionVariableValue)
                       defValMap
       let multiObjIns = AnnIns annInsObjs conflictClauseM
                         vn tableCols defValMapRes
           tableCols = Map.elems tableColMap
       strfyNum <- stringifyNum <$> asks getter
-      return $ prefixErrPath fld $ insertMultipleObjects strfyNum role tn
+      return $ prefixErrPath fld $ insertMultipleObjects strfyNum roleName tn
         multiObjIns [] mutFlds "objects"
     withEmptyObjs mutFlds =
       return $ return $ buildEmptyMutResp mutFlds
     arguments = _fArguments fld
     onConflictM = Map.lookup "on_conflict" arguments
 
+validateSessionVariables
+  :: (MonadReader r m, Has UserInfo r, QErrM m) => Set.HashSet SessVar -> m ()
+validateSessionVariables requiredSessionVariables = do
+  currentSessionVariables <- asks $ getVarNameSet . userVars . getter
+  let missingSessionVariables =
+        requiredSessionVariables `Set.difference` currentSessionVariables
+  unless (null missingSessionVariables) $
+    throw500 $ "missing required session variables: " <>
+    T.intercalate "," (map dquote $ toList missingSessionVariables)
+
 -- helper functions
 getInsCtx
-  :: (MonadError QErr m, MonadReader r m, Has InsCtxMap r)
+  :: (MonadError QErr m, MonadReader r m, Has InsCtxMap r, Has UserInfo r)
   => QualifiedTable -> m InsCtx
 getInsCtx tn = do
   ctxMap <- asks getter
@@ -548,6 +569,7 @@ getInsCtx tn = do
   let defValMap = fmap PSESQLExp $ S.mkColDefValMap $ map pgiColumn $
                   Map.elems $ icAllCols insCtx
       setCols = icSet insCtx
+  validateSessionVariables $ icRequiredSessionVariables insCtx
   return $ insCtx {icSet = Map.union setCols defValMap}
 
 fetchVal :: (MonadError QErr m)
