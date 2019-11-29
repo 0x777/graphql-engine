@@ -2,7 +2,7 @@
   url: /v1/graphql
   status: 200
   headers:
-    X-Hasura-Role: user5
+    X-Hasura-Role: has_keys_all
     X-Hasura-Json-required-keys: |-
       {name,age}
   response:
@@ -25,16 +25,23 @@
   url: /v1/graphql
   status: 200
   headers:
-    X-Hasura-Role: user5
+    X-Hasura-Role: has_keys_all
     X-Hasura-Json-required-keys: |-
       {}
   response:
     data:
-      jsonb_table: []
+      jsonb_table:
+      - id: 1
+        jsonb_col:
+          name: Hasura
+          age: 7
+      - id: 2
+        jsonb_col:
+          name: Cross
   query:
     query: |
       query {
-        jsonb_table{
+        jsonb_table (order_by: {id: asc}) {
           id
           jsonb_col
         }

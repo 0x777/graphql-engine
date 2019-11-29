@@ -419,7 +419,7 @@ args:
 - type: create_select_permission
   args:
     table: jsonb_table
-    role: user4
+    role: has_keys_any
     permission:
       columns:
       - id
@@ -432,7 +432,7 @@ args:
 - type: create_select_permission
   args:
     table: jsonb_table
-    role: user5
+    role: has_keys_all
     permission:
       columns:
       - id
