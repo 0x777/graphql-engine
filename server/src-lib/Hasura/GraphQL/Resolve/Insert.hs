@@ -2,10 +2,10 @@ module Hasura.GraphQL.Resolve.Insert
   (convertInsert)
 where
 
+import           Hasura.Prelude
+
 import           Control.Arrow                     ((>>>))
 import           Data.Has
-import           Hasura.EncJSON
-import           Hasura.Prelude
 
 import qualified Data.Aeson                        as J
 import qualified Data.Aeson.Casing                 as J
@@ -20,9 +20,9 @@ import qualified Language.GraphQL.Draft.Syntax     as G
 import qualified Database.PG.Query                 as Q
 import qualified Hasura.RQL.DML.Insert             as RI
 import qualified Hasura.RQL.DML.Returning          as RR
-
 import qualified Hasura.SQL.DML                    as S
 
+import           Hasura.EncJSON
 import           Hasura.GraphQL.Resolve.BoolExp
 import           Hasura.GraphQL.Resolve.Context
 import           Hasura.GraphQL.Resolve.InputValue
@@ -551,12 +551,10 @@ convertInsert tn fld = prefixErrPath fld $ do
 validateSessionVariables
   :: (MonadReader r m, Has UserInfo r, QErrM m) => Set.HashSet SessVar -> m ()
 validateSessionVariables requiredSessionVariables = do
-  currentSessionVariables <- asks $ getVarNameSet . userVars . getter
-  let missingSessionVariables =
-        requiredSessionVariables `Set.difference` currentSessionVariables
-  unless (null missingSessionVariables) $
-    throw500 $ "missing required session variables: " <>
-    T.intercalate "," (map dquote $ toList missingSessionVariables)
+  currentSessionVariables <- asks (userVars . getter)
+  case getMissingSessionVariables requiredSessionVariables currentSessionVariables of
+    Nothing -> return ()
+    Just l  -> throw500 $ mkMissingSessionVariablesMessage l
 
 -- helper functions
 getInsCtx

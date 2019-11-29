@@ -15,6 +15,7 @@ import           Data.Aeson.Types
 
 import qualified Data.HashMap.Strict as M
 import qualified Data.HashSet        as HS
+import qualified Data.List.NonEmpty  as NE
 import qualified Data.Sequence       as DS
 
 newtype DMLP1 a
@@ -231,7 +232,7 @@ sessVarValueInlined
 sessVarValueInlined pgType sessVar = do
   sessionVariableValueRawM <- getVarVal sessVar . userVars <$> askUserInfo
   case sessionVariableValueRawM of
-    Nothing -> throw500 $ sessVar <<> " session variable is required, but not found"
+    Nothing -> throw500 $ mkMissingSessionVariablesMessage $ sessVar NE.:| []
     Just sessionVariableValueRaw ->
       pure $ annotateSessionVariableValue pgType $ S.SELit sessionVariableValueRaw
 

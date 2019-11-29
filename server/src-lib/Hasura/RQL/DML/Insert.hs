@@ -7,7 +7,6 @@ import qualified Data.Aeson.Extended      as J
 import qualified Data.HashMap.Strict      as HM
 import qualified Data.HashSet             as HS
 import qualified Data.Sequence            as DS
-import qualified Data.Text                as T
 
 import           Hasura.EncJSON
 import           Hasura.Prelude
@@ -158,12 +157,10 @@ buildConflictClause sessVarBldr tableInfo inpCols (OnConflict mTCol mTCons act) 
 
 validateSessionVariables :: (UserInfoM m, QErrM m) => HS.HashSet SessVar -> m ()
 validateSessionVariables requiredSessionVariables = do
-  currentSessionVariables <- getVarNameSet . userVars <$> askUserInfo
-  let missingSessionVariables =
-        requiredSessionVariables `HS.difference` currentSessionVariables
-  unless (null missingSessionVariables) $
-    throw500 $ "missing required session variables: " <>
-    T.intercalate "," (map dquote $ toList missingSessionVariables)
+  currentSessionVariables <- userVars <$> askUserInfo
+  case getMissingSessionVariables requiredSessionVariables currentSessionVariables of
+    Nothing -> return ()
+    Just l  -> throw500 $ mkMissingSessionVariablesMessage l
 
 convInsertQuery
   :: (UserInfoM m, QErrM m, CacheRM m)

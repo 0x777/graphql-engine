@@ -36,6 +36,7 @@ import           Hasura.Prelude
 
 import qualified Data.Aeson                    as J
 import qualified Data.HashMap.Strict           as Map
+import qualified Data.List.NonEmpty            as NE
 import qualified Data.Sequence                 as Seq
 import qualified Database.PG.Query             as Q
 import qualified Language.GraphQL.Draft.Syntax as G
@@ -158,8 +159,7 @@ embedSessionVariableValue
 embedSessionVariableValue colTy sessVar = do
   sessionVariableValueRawM <- getVarVal sessVar . userVars <$> asks getter
   case sessionVariableValueRawM of
-    Nothing -> throw500 $ sessVar <<>
-               " session variable is required, but not found"
+    Nothing -> throw500 $ mkMissingSessionVariablesMessage $ sessVar NE.:| []
     Just sessionVariableValueRaw ->
       pure $ annotateSessionVariableValue colTy $
       S.SELit sessionVariableValueRaw

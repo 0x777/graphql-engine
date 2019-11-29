@@ -91,12 +91,10 @@ withUserVars
 withUserVars usrVars requiredSessionVariables list = do
   let usrVarsAsPgScalar = PGValJSON $ Q.JSON $ J.toJSON usrVars
       prepArg = Q.toPrepVal (Q.AltJ usrVars)
-      missingSessionVariables = requiredSessionVariables
-                                `Set.difference` getVarNameSet usrVars
-  if null missingSessionVariables
-    then pure $ (prepArg, usrVarsAsPgScalar):list
-    else throw500 $ "missing session variables: " <>
-         T.intercalate ", " (map dquote $ toList missingSessionVariables)
+
+  case getMissingSessionVariables requiredSessionVariables usrVars of
+    Nothing -> pure $ (prepArg, usrVarsAsPgScalar):list
+    Just l  -> throw500 $ mkMissingSessionVariablesMessage l
 
 data PlanningSt
   = PlanningSt

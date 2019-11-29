@@ -11,6 +11,8 @@ module Hasura.RQL.Types.Permission
        , getVarNames
        , getVarNameSet
        , getVarVal
+       , getMissingSessionVariables
+       , mkMissingSessionVariablesMessage
        , roleFromVars
 
        , UserInfo(..)
@@ -32,7 +34,6 @@ import           Hasura.Server.Utils        (adminSecretHeader,
                                              userRoleHeader)
 import           Hasura.SQL.Types
 
-import qualified Database.PG.Query          as Q
 
 import           Data.Aeson
 import           Data.Hashable
@@ -41,7 +42,9 @@ import           Language.Haskell.TH.Syntax (Lift)
 
 import qualified Data.HashMap.Strict        as Map
 import qualified Data.HashSet               as Set
+import qualified Data.List.NonEmpty         as NE
 import qualified Data.Text                  as T
+import qualified Database.PG.Query          as Q
 import qualified PostgreSQL.Binary.Decoding as PD
 
 newtype RoleName
@@ -70,6 +73,23 @@ newtype UserVars
 
 isUserVar :: T.Text -> Bool
 isUserVar = T.isPrefixOf "x-hasura-" . T.toLower
+
+getMissingSessionVariables
+  -- | required session variables
+  :: Set.HashSet SessVar
+  -- | current session variables
+  -> UserVars
+  -- | missing session variables if any
+  -> Maybe (NE.NonEmpty SessVar)
+getMissingSessionVariables requiredSessionVariables currentSessionVariables =
+  NE.nonEmpty . toList $
+  requiredSessionVariables `Set.difference` getVarNameSet currentSessionVariables
+
+mkMissingSessionVariablesMessage :: NE.NonEmpty SessVar -> Text
+mkMissingSessionVariablesMessage variables = case variables of
+  s NE.:| [] -> "missing required session variable: " <> dquote s
+  _          -> "missing required session variables: " <>
+                T.intercalate "," (map dquote $ toList variables)
 
 -- returns Nothing if x-hasura-role is an empty string
 roleFromVars :: UserVars -> Maybe RoleName
