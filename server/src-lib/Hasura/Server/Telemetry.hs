@@ -12,7 +12,7 @@ module Hasura.Server.Telemetry
 
 import           Control.Exception     (try)
 import           Control.Lens
-import           Data.List
+import qualified Data.List as L
 import           Data.Text.Conversions (UTF8 (..), decodeText)
 
 import           Hasura.HTTP
@@ -148,10 +148,10 @@ computeMetrics sc _mtServiceTimings =
       _mtViews = countUserTables (isJust . _tciViewInfo . _tiCoreInfo)
       _mtEnumTables = countUserTables (isJust . _tciEnumValues . _tiCoreInfo)
       allRels = join $ Map.elems $ Map.map (getRels . _tciFieldInfoMap . _tiCoreInfo) userTables
-      (manualRels, autoRels) = partition riIsManual allRels
+      (manualRels, autoRels) = L.partition riIsManual allRels
       _mtRelationships = RelationshipMetric (length manualRels) (length autoRels)
       rolePerms = join $ Map.elems $ Map.map permsOfTbl userTables
-      _pmRoles = length $ nub $ fst <$> rolePerms
+      _pmRoles = length $ L.nub $ fst <$> rolePerms
       allPerms = snd <$> rolePerms
       _pmInsert = calcPerms _permIns allPerms
       _pmSelect = calcPerms _permSel allPerms
@@ -183,11 +183,11 @@ computeActionsMetrics ac ao = ActionMetric syncActionsLen asyncActionsLen typeRe
         syncActionsLen  = length . filter ((==ActionSynchronous) . _adKind . _aiDefinition) $ actions
         asyncActionsLen = (length actions) - syncActionsLen
 
-        outputTypesLen = length . nub . (map (_adOutputType . _aiDefinition)) $ actions
-        inputTypesLen = length . nub . concat . (map ((map _argType) . _adArguments . _aiDefinition)) $ actions
+        outputTypesLen = length . L.nub . (map (_adOutputType . _aiDefinition)) $ actions
+        inputTypesLen = length . L.nub . concat . (map ((map _argType) . _adArguments . _aiDefinition)) $ actions
         customTypesLen = inputTypesLen + outputTypesLen
 
-        typeRelationships = length . nub . concat . map ((getActionTypeRelationshipNames ao) . _aiDefinition) $ actions
+        typeRelationships = length . L.nub . concat . map ((getActionTypeRelationshipNames ao) . _aiDefinition) $ actions
 
         -- gives the count of relationships associated with an action
         getActionTypeRelationshipNames :: AnnotatedObjects -> ResolvedActionDefinition -> [RelationshipName]

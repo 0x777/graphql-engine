@@ -9,7 +9,6 @@ import           Data.Aeson
 import           Data.Aeson.Types
 import           Data.Hashable
 import           Hasura.Prelude
-import           Language.Haskell.TH.Syntax (Lift)
 import           Network.URI
 
 import qualified Data.Text                  as T

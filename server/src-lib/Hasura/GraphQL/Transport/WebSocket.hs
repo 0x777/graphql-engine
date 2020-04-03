@@ -44,7 +44,6 @@ import           Hasura.GraphQL.Transport.HTTP.Protocol
 import           Hasura.GraphQL.Transport.WebSocket.Protocol
 import           Hasura.Prelude
 import           Hasura.RQL.Types
-import           Hasura.RQL.Types.Error                      (Code (StartFailed))
 import           Hasura.Server.Auth                          (AuthMode, UserAuthentication,
                                                               resolveUserInfo)
 import           Hasura.Server.Context
@@ -541,7 +540,7 @@ onConnInit logger manager wsConn authMode connParamsM = do
       let !initErr = CSInitError $ qeError e
       liftIO $ do
         $assertNFHere initErr  -- so we don't write thunks to mutable vars
-        STM.atomically $ STM.writeTVar (_wscUser $ WS.getData wsConn) initErr 
+        STM.atomically $ STM.writeTVar (_wscUser $ WS.getData wsConn) initErr
 
       let connErr = ConnErrMsg $ qeError e
       logWSEvent logger wsConn $ EConnErr connErr

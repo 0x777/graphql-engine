@@ -13,9 +13,7 @@ module Hasura.Server.Auth.JWT
 
 import           Control.Exception               (try)
 import           Control.Lens
-import           Control.Monad                   (when)
 import           Data.IORef                      (IORef, readIORef, writeIORef)
-import           Data.List                       (find)
 import           Data.Parser.CacheControl        (parseMaxAge)
 import           Data.Time.Clock                 (NominalDiffTime, UTCTime, diffUTCTime,
                                                   getCurrentTime)
