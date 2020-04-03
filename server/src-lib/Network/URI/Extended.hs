@@ -26,7 +26,5 @@ instance {-# INCOHERENT #-} ToJSON URI where
 instance {-# INCOHERENT #-} ToJSONKey URI where
   toJSONKey = toJSONKeyText (T.pack . show)
 
-instance Lift URI
-
 instance Hashable URI where
   hashWithSalt i = hashWithSalt i . (T.pack . show)
