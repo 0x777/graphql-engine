@@ -30,7 +30,3 @@ quoteRegex compOption execOption regexText = do
   regex <- TDFA.parseRegex regexText `onLeft` (fail . show)
   [|| TDFA.patternToRegex regex compOption execOption ||]
 
-fmapL :: (a -> a') -> Either a b -> Either a' b
-fmapL fn (Left e) = Left (fn e)
-fmapL _ (Right x) = pure x
-

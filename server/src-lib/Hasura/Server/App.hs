@@ -35,6 +35,7 @@ import qualified System.Metrics                         as EKG
 import qualified System.Metrics.Json                    as EKG
 import qualified Text.Mustache                          as M
 import qualified Web.Spock.Core                         as Spock
+import qualified Data.Bifunctor                         as Bifunctor
 
 import           Hasura.EncJSON
 import           Hasura.HTTP
@@ -51,7 +52,6 @@ import           Hasura.Server.Logging
 import           Hasura.Server.Middleware               (corsMiddleware)
 import           Hasura.Server.Migrate                  (migrateCatalog)
 import           Hasura.Server.Query
-import           Hasura.Server.Utils
 import           Hasura.Server.Version
 import           Hasura.SQL.Types
 
@@ -246,7 +246,7 @@ mkSpockAction serverCtx qErrEncoder qErrModifier apiHandler = do
         return (res, Just parsedReq)
 
     -- apply the error modifier
-    let modResult = fmapL qErrModifier result
+    let modResult = Bifunctor.first qErrModifier result
 
     -- log and return result
     case modResult of

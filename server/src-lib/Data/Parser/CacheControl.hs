@@ -18,8 +18,7 @@ module Data.Parser.CacheControl
 
 import           Hasura.Prelude
 
-import           Hasura.Server.Utils  (fmapL)
-
+import qualified Data.Bifunctor       as Bifunctor
 import qualified Data.Attoparsec.Text as AT
 import qualified Data.Text            as T
 
@@ -39,7 +38,7 @@ parseMaxAge t = do
     Nothing -> Left parseErr
     Just d -> case d of
       CCDOnlyToken _        -> Left parseErr
-      CCDTokenWithVal _ val -> fmapL (const parseErr) $ AT.parseOnly AT.decimal val
+      CCDTokenWithVal _ val -> Bifunctor.first (const parseErr) $ AT.parseOnly AT.decimal val
   where
     parseErr = "could not find max-age/s-maxage"
     checkMaxAgeToken = \case

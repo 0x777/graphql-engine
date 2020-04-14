@@ -14,7 +14,7 @@ module Hasura.Server.Cors
   ) where
 
 import           Hasura.Prelude
-import           Hasura.Server.Utils  (fmapL)
+import qualified Data.Bifunctor       as Bifunctor
 
 import           Control.Applicative  (optional)
 
@@ -115,7 +115,7 @@ originParser =
 
 parseOptWildcardDomain :: Text -> Either String (Either Text DomainParts)
 parseOptWildcardDomain d =
-  fmapL (const errMsg) $ runParser optWildcardDomainParser d
+  Bifunctor.first (const errMsg) $ runParser optWildcardDomainParser d
   where
 
     optWildcardDomainParser :: AT.Parser (Either Text DomainParts)

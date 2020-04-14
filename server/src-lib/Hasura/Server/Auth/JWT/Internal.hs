@@ -13,8 +13,8 @@ import           Data.Int                 (Int64)
 import           Data.Text.Conversions
 
 import           Hasura.Prelude
-import           Hasura.Server.Utils      (fmapL)
 
+import qualified Data.Bifunctor           as Bifunctor
 import qualified Data.ByteString.Lazy     as BL
 import qualified Data.PEM                 as PEM
 import qualified Data.Text                as T
@@ -52,16 +52,16 @@ fromRawPem bs = -- pubKeyToJwk <=< fromPkcsPem
 -- decode a PKCS1 or PKCS8 PEM to obtain the public key
 fromPkcsPem :: BL.ByteString -> Either Text X509.PubKey
 fromPkcsPem bs = do
-  pems <- fmapL T.pack $ PEM.pemParseLBS bs
+  pems <- Bifunctor.first T.pack $ PEM.pemParseLBS bs
   pem  <- getAtleastOne "No pem found" pems
-  res  <- fmapL asn1ErrToText $ decodeASN1' DER $ PEM.pemContent pem
+  res  <- Bifunctor.first asn1ErrToText $ decodeASN1' DER $ PEM.pemContent pem
   case res of
     -- PKCS#1 format
     [Start Sequence, IntVal n, IntVal e, End Sequence] ->
       return $ X509.PubKeyRSA $ PublicKey (calculateSize n) n e
     -- try and see if its a PKCS#8 format
     asn1 -> do
-      (pub, xs) <- fmapL T.pack $ fromASN1 asn1
+      (pub, xs) <- Bifunctor.first T.pack $ fromASN1 asn1
       unless (null xs) (Left "Could not decode public key")
       return pub
   where
@@ -72,11 +72,11 @@ fromPkcsPem bs = do
 fromX509Pem :: BL.ByteString -> Either Text X509.PubKey
 fromX509Pem s = do
   -- try to parse bytestring to a [PEM]
-  pems <- fmapL T.pack $ PEM.pemParseLBS s
+  pems <- Bifunctor.first T.pack $ PEM.pemParseLBS s
   -- fail if [PEM] is empty
   pem <- getAtleastOne "No pem found" pems
   -- decode the bytestring to a certificate
-  signedExactCert <- fmapL T.pack $ X509.decodeSignedCertificate $
+  signedExactCert <- Bifunctor.first T.pack $ X509.decodeSignedCertificate $
                      PEM.pemContent pem
   let cert = X509.signedObject $ X509.getSigned signedExactCert
       pubKey = X509.certPubKey cert
