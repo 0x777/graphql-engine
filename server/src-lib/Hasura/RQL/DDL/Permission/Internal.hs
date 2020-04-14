@@ -22,7 +22,6 @@ import           Hasura.Incremental         (Cacheable)
 import           Hasura.Prelude
 import           Hasura.RQL.GBoolExp
 import           Hasura.RQL.Types
-import           Hasura.Server.Utils (userIdHeader)
 import           Hasura.SQL.Types
 import           Hasura.SQL.Value
 

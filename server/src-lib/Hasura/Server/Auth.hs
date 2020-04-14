@@ -35,7 +35,6 @@ import           Hasura.Prelude
 import           Hasura.RQL.Types
 import           Hasura.Server.Auth.JWT
 import           Hasura.Server.Auth.WebHook
-import           Hasura.Server.Utils
 
 -- | Typeclass representing the @UserInfo@ authorization and resolving effect
 class (Monad m) => UserAuthentication m where

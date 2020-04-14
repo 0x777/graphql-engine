@@ -222,7 +222,6 @@ library
                      , Hasura.Server.Auth
                      , Hasura.Server.Init
                      , Hasura.Server.Query
-                     , Hasura.Server.Utils
                      , Hasura.Server.Version
                      , Hasura.Server.Logging
                      , Hasura.Server.Migrate

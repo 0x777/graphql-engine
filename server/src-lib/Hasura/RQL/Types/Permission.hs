@@ -21,14 +21,17 @@ module Hasura.RQL.Types.Permission
        , PermType(..)
        , permTypeToCode
        , PermId(..)
+
+       , userIdHeader
+       , userRoleHeader
+       , deprecatedAccessKeyHeader
+       , adminSecretHeader
        ) where
 
 import           Hasura.Incremental         (Cacheable)
 import           Hasura.Prelude
 import           Hasura.RQL.Types.Common    (NonEmptyText, adminText, mkNonEmptyText,
                                              unNonEmptyText)
-import           Hasura.Server.Utils        (adminSecretHeader, deprecatedAccessKeyHeader,
-                                             userRoleHeader)
 import           Hasura.SQL.Types
 
 import qualified Database.PG.Query          as Q
@@ -41,6 +44,18 @@ import           Language.Haskell.TH.Syntax (Lift)
 import qualified Data.HashMap.Strict        as Map
 import qualified Data.Text                  as T
 import qualified PostgreSQL.Binary.Decoding as PD
+
+userRoleHeader :: IsString a => a
+userRoleHeader = "x-hasura-role"
+
+deprecatedAccessKeyHeader :: IsString a => a
+deprecatedAccessKeyHeader = "x-hasura-access-key"
+
+adminSecretHeader :: IsString a => a
+adminSecretHeader = "x-hasura-admin-secret"
+
+userIdHeader :: IsString a => a
+userIdHeader = "x-hasura-user-id"
 
 newtype RoleName
   = RoleName {getRoleTxt :: NonEmptyText}
