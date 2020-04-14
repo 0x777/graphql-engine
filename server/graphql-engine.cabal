@@ -378,6 +378,7 @@ library
                      , Data.TByteString
                      , Data.Text.Extended
                      , Data.Parser.Expires
+                     , Text.Regex.TDFA.TH
 
                      , Hasura.SQL.DML
                      , Hasura.SQL.Error

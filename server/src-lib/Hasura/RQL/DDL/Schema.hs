@@ -41,6 +41,7 @@ import qualified Data.Text.Encoding             as TE
 import qualified Database.PG.Query              as Q
 import qualified Database.PostgreSQL.LibPQ      as PQ
 import qualified Text.Regex.TDFA                as TDFA
+import qualified Text.Regex.TDFA.TH             as TDFA
 
 import           Data.Aeson
 import           Data.Aeson.Casing
@@ -55,7 +56,6 @@ import           Hasura.RQL.DDL.Schema.Rename
 import           Hasura.RQL.DDL.Schema.Table
 import           Hasura.RQL.Instances           ()
 import           Hasura.RQL.Types
-import           Hasura.Server.Utils            (quoteRegex)
 
 data RunSQL
   = RunSQL
@@ -105,7 +105,7 @@ runRunSQL RunSQL {..} = do
 
     -- see Note [Checking metadata consistency in run_sql]
     containsDDLKeyword :: Text -> Bool
-    containsDDLKeyword = TDFA.match $$(quoteRegex
+    containsDDLKeyword = TDFA.match $$(TDFA.quoteRegex
       TDFA.defaultCompOpt
         { TDFA.caseSensitive = False
         , TDFA.multiline = True
