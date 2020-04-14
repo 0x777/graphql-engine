@@ -28,7 +28,7 @@ import           Hasura.Prelude
 import           Hasura.RQL.Types.Common    (NonEmptyText, adminText, mkNonEmptyText,
                                              unNonEmptyText)
 import           Hasura.Server.Utils        (adminSecretHeader, deprecatedAccessKeyHeader,
-                                             isUserVar, userRoleHeader)
+                                             userRoleHeader)
 import           Hasura.SQL.Types
 
 import qualified Database.PG.Query          as Q
@@ -79,6 +79,9 @@ getVarNames :: UserVars -> [T.Text]
 getVarNames =
   Map.keys . unUserVars
 
+isUserVar :: Text -> Bool
+isUserVar = T.isPrefixOf "x-hasura-" . T.toLower
+
 mkUserVars :: [(T.Text, T.Text)] -> UserVars
 mkUserVars l =
   UserVars $ Map.fromList
@@ -98,10 +101,6 @@ mkUserInfo rn (UserVars v) =
   foldl (flip Map.delete) v [adminSecretHeader, deprecatedAccessKeyHeader]
 
 instance Hashable UserInfo
-
--- $(J.deriveToJSON (J.aesonDrop 4 J.camelCase){J.omitNothingFields=True}
---   ''UserInfo
---  )
 
 userInfoToList :: UserInfo -> [(Text, Text)]
 userInfoToList userInfo =

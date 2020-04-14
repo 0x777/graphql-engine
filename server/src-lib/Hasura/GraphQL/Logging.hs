@@ -12,7 +12,7 @@ import qualified Language.GraphQL.Draft.Syntax          as G
 
 import           Hasura.GraphQL.Transport.HTTP.Protocol (GQLReqUnparsed)
 import           Hasura.Prelude
-import           Hasura.Server.Utils                    (RequestId)
+import           Hasura.HTTP                            (RequestId)
 
 import qualified Hasura.GraphQL.Execute.Query           as EQ
 import qualified Hasura.Logging                         as L

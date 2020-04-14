@@ -477,7 +477,7 @@ withMetadataCheck cascade action = do
 
   return res
   where
-    reportFuncs = T.intercalate ", " . map dquoteTxt
+    reportFuncs = T.intercalate ", " . map dquoteTxt . toList
 
     processSchemaChanges :: (MonadTx m, CacheRM m) => SchemaDiff -> m ()
     processSchemaChanges schemaDiff = do

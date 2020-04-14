@@ -41,7 +41,6 @@ import           Hasura.RQL.DDL.Schema.Cache
 import           Hasura.RQL.DML.Select             (asSingleRowJsonResp)
 import           Hasura.RQL.Types
 import           Hasura.RQL.Types.Run
-import           Hasura.Server.Utils               (mkClientHeadersForward, mkSetCookieHeaders)
 import           Hasura.Server.Version             (HasVersion)
 import           Hasura.SQL.Types
 import           Hasura.SQL.Value                  (PGScalarValue (..), pgScalarValueToJson,
@@ -372,7 +371,9 @@ callWebhook
 callWebhook manager outputType outputFields reqHeaders confHeaders
             forwardClientHeaders resolvedWebhook actionWebhookPayload = do
   resolvedConfHeaders <- makeHeadersFromConf confHeaders
-  let clientHeaders = if forwardClientHeaders then mkClientHeadersForward reqHeaders else []
+  let clientHeaders = if forwardClientHeaders
+                         then mkUpstreamRequestHeaders reqHeaders
+                         else []
       contentType = ("Content-Type", "application/json")
       options = wreqOptions manager $
                 -- Using HashMap to avoid duplicate headers between configuration headers
@@ -411,7 +412,7 @@ callWebhook manager outputType outputFields reqHeaders confHeaders
                    when expectingArray $
                      throwUnexpected "expecting array for action webhook response but got object"
                    validateResponseObject obj
-               pure (webhookResponse, mkSetCookieHeaders responseWreq)
+               pure (webhookResponse, getSetCookieHeaders responseWreq)
 
          | HTTP.statusIsClientError responseStatus -> do
              ActionWebhookErrorResponse message maybeCode <-

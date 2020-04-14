@@ -9,7 +9,6 @@ import           Hasura.GraphQL.Utils          (showNames)
 import           Hasura.Incremental            (Cacheable)
 import           Hasura.Prelude
 import           Hasura.RQL.Types
-import           Hasura.Server.Utils           (makeReasonMessage)
 import           Hasura.SQL.Types
 
 import           Data.Aeson

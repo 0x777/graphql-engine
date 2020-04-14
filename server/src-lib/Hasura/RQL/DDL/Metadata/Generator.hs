@@ -8,7 +8,6 @@ import           Hasura.Prelude
 import           Hasura.RQL.DDL.Headers
 import           Hasura.RQL.DDL.Metadata.Types
 import           Hasura.RQL.Types
-import           Hasura.Server.Utils
 import           Hasura.SQL.Types
 
 import qualified Hasura.RQL.DDL.ComputedField       as ComputedField
@@ -21,6 +20,7 @@ import qualified Hasura.RQL.DDL.Schema              as Schema
 import qualified Data.Aeson                         as J
 import qualified Data.HashMap.Strict                as HM
 import qualified Data.List.NonEmpty                 as NEList
+import qualified Data.List.Extended                 as L
 import qualified Data.Text                          as T
 import qualified Data.Vector                        as V
 import qualified Language.GraphQL.Draft.Parser      as G
@@ -61,7 +61,7 @@ instance Arbitrary TableCustomRootFields where
     where
       uniqueRootFields = do
         (a, b, c, d, e, f, g, h, i) <- arbitrary
-        if null $ duplicates [a, b, c, d, e, f, g, h, i] then
+        if null $ L.duplicates [a, b, c, d, e, f, g, h, i] then
           pure $ TableCustomRootFields a b c d e f g h i
         else uniqueRootFields
 

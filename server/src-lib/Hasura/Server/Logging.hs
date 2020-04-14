@@ -40,7 +40,6 @@ import           Hasura.Logging
 import           Hasura.Prelude
 import           Hasura.RQL.Types
 import           Hasura.Server.Compression
-import           Hasura.Server.Utils
 
 data StartupLog
   = StartupLog

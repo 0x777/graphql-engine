@@ -27,7 +27,6 @@ import           Hasura.Logging
 import           Hasura.Prelude
 import           Hasura.RQL.Types
 import           Hasura.Server.Logging
-import           Hasura.Server.Utils
 
 
 data AuthHookType
@@ -88,7 +87,6 @@ userInfoFromAuthHook logger manager hook reqHeaders = do
         WebHookLog LevelError Nothing (ahUrl hook) (hookMethod hook)
         (Just $ HttpException err) Nothing Nothing
       throw500 $ "webhook authentication request failed"
-
 
 mkUserInfoFromResp
   :: (MonadIO m, MonadError QErr m)

@@ -6,20 +6,20 @@ module Hasura.GraphQL.Validate.InputValue
   , pPrintValueC
   ) where
 
-import           Data.Scientific                 (fromFloatDigits)
+import           Data.Scientific               (fromFloatDigits)
 import           Hasura.Prelude
-import           Hasura.Server.Utils             (duplicates)
 
 import           Data.Has
 
-import qualified Data.Aeson                      as J
-import qualified Data.HashMap.Strict             as Map
-import qualified Data.HashMap.Strict.InsOrd      as OMap
-import qualified Data.Text                       as T
-import qualified Data.Vector                     as V
-import qualified Language.GraphQL.Draft.Syntax   as G
+import qualified Data.Aeson                    as J
+import qualified Data.HashMap.Strict           as Map
+import qualified Data.HashMap.Strict.InsOrd    as OMap
+import qualified Data.Text                     as T
+import qualified Data.List.Extended            as L
+import qualified Data.Vector                   as V
+import qualified Language.GraphQL.Draft.Syntax as G
 
-import qualified Hasura.RQL.Types                as RQL
+import qualified Hasura.RQL.Types              as RQL
 
 import           Hasura.GraphQL.Utils
 import           Hasura.GraphQL.Validate.Context
@@ -229,7 +229,7 @@ validateObject valParser tyInfo flds = do
 
   where
     inpFldNames = map fst flds
-    dups = duplicates inpFldNames
+    dups = L.duplicates inpFldNames
 
 validateNamedTypeVal
   :: ( MonadReader r m, Has TypeMap r

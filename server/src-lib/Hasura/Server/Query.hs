@@ -35,7 +35,6 @@ import           Hasura.RQL.DML.Update
 import           Hasura.RQL.Types
 import           Hasura.RQL.Types.Run
 import           Hasura.Server.Init                 (InstanceId (..))
-import           Hasura.Server.Utils
 import           Hasura.Server.Version              (HasVersion)
 
 
@@ -125,6 +124,23 @@ data RQLQuery
   = RQV1 !RQLQueryV1
   | RQV2 !RQLQueryV2
   deriving (Show, Eq, Lift)
+
+data APIVersion
+  = VIVersion1
+  | VIVersion2
+  deriving (Show, Eq, Lift)
+
+instance ToJSON APIVersion where
+  toJSON VIVersion1 = toJSON @Int 1
+  toJSON VIVersion2 = toJSON @Int 2
+
+instance FromJSON APIVersion where
+  parseJSON v = do
+    verInt :: Int <- parseJSON v
+    case verInt of
+      1 -> return VIVersion1
+      2 -> return VIVersion2
+      i -> fail $ "expected 1 or 2, encountered " ++ show i
 
 instance FromJSON RQLQuery where
   parseJSON = withObject "Object" $ \o -> do

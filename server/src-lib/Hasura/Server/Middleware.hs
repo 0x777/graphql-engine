@@ -6,7 +6,7 @@ import           Network.Wai
 import           Control.Applicative
 import           Hasura.Prelude
 import           Hasura.Server.Cors
-import           Hasura.Server.Utils
+import           Hasura.HTTP
 
 import qualified Data.ByteString      as B
 import qualified Data.CaseInsensitive as CI

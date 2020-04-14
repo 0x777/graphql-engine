@@ -42,6 +42,9 @@ module Hasura.RQL.Types.Error
        , indexedForM_
        , indexedMapM_
        , indexedTraverseA_
+
+       , englishList
+       , makeReasonMessage
        ) where
 
 import           Control.Arrow.Extended
@@ -54,6 +57,7 @@ import           Text.Show              (Show (..))
 
 import qualified Data.Text              as T
 import qualified Network.HTTP.Types     as N
+import qualified Data.List.NonEmpty     as NE
 
 data Code
   = PermissionDenied
@@ -340,3 +344,18 @@ runAesonParser p =
 
 decodeValue :: (FromJSON a, QErrM m) => Value -> m a
 decodeValue = liftIResult . ifromJSON
+
+englishList :: NonEmpty Text -> Text
+englishList = \case
+  one :| []    -> one
+  one :| [two] -> one <> " and " <> two
+  several      ->
+    let final :| initials = NE.reverse several
+    in T.intercalate ", " (reverse initials) <> ", and " <> final
+
+makeReasonMessage :: [a] -> (a -> Text) -> Text
+makeReasonMessage errors showError =
+  case errors of
+    [singleError] -> "because " <> showError singleError
+    _ -> "for the following reasons:\n" <> T.unlines
+         (map (("  • " <>) . showError) errors)

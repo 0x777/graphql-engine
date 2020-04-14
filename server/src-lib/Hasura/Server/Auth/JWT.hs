@@ -30,7 +30,7 @@ import           Hasura.Prelude
 import           Hasura.RQL.Types
 import           Hasura.Server.Auth.JWT.Internal (parseHmacKey, parseRsaKey)
 import           Hasura.Server.Auth.JWT.Logging
-import           Hasura.Server.Utils             (getRequestHeader, userRoleHeader)
+import           Hasura.Server.Utils             (userRoleHeader)
 import           Hasura.Server.Version           (HasVersion)
 
 import qualified Control.Concurrent.Extended     as C

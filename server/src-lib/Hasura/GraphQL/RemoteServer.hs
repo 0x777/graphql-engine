@@ -19,7 +19,6 @@ import qualified Network.Wreq                  as Wreq
 
 import           Hasura.RQL.DDL.Headers        (makeHeadersFromConf)
 import           Hasura.RQL.Types
-import           Hasura.Server.Utils           (httpExceptToJSON)
 import           Hasura.Server.Version         (HasVersion)
 
 import qualified Hasura.GraphQL.Context        as GC

@@ -16,6 +16,7 @@ import           Hasura.Prelude
 import qualified Data.SemVer                as V
 import qualified Data.Text                  as T
 import qualified Language.Haskell.TH.Syntax as TH
+import qualified Data.Text.IO               as TI
 
 import           Text.Regex.TDFA           ((=~~))
 import           Control.Lens               ((^.), (^?))
@@ -23,7 +24,9 @@ import           Data.Aeson                 (FromJSON (..), ToJSON (..))
 import           Data.Text.Conversions      (FromText (..), ToText (..))
 
 import           Hasura.RQL.Instances       ()
-import           Hasura.Server.Utils        (getValFromEnvOrScript)
+import           System.Environment
+import           System.Exit
+import           System.Process
 
 data Version
   = VersionDev !Text
@@ -46,23 +49,46 @@ instance ToJSON Version where
 instance FromJSON Version where
   parseJSON = fmap fromText . parseJSON
 
+-- Get an env var during compile time
+getValFromEnvOrScript :: String -> String -> TH.Q (TH.TExp String)
+getValFromEnvOrScript n s = do
+  maybeVal <- TH.runIO $ lookupEnv n
+  case maybeVal of
+    Just val -> [|| val ||]
+    Nothing  -> runScript s
+
+-- Run a shell script during compile time
+runScript :: FilePath -> TH.Q (TH.TExp String)
+runScript fp = do
+  TH.addDependentFile fp
+  fileContent <- TH.runIO $ TI.readFile fp
+  (exitCode, stdOut, stdErr) <- TH.runIO $
+    readProcessWithExitCode "/bin/sh" [] $ T.unpack fileContent
+  when (exitCode /= ExitSuccess) $ fail $
+    "Running shell script " ++ fp ++ " failed with exit code : "
+    ++ show exitCode ++ " and with error : " ++ stdErr
+  [|| stdOut ||]
+
 getVersionFromEnvironment :: TH.Q (TH.TExp Version)
 getVersionFromEnvironment = do
   let txt = getValFromEnvOrScript "VERSION" "../scripts/get-version.sh"
   [|| fromText $ T.dropWhileEnd (== '\n') $ T.pack $$(txt) ||]
 
--- | Lots of random things need access to the current version. It would be very convenient to define
--- @version :: 'Version'@ in this module and export it, and indeed, that’s what we used to do! But
--- that turns out to cause problems: the version is compiled into the executable via Template
--- Haskell, so the Pro codebase runs into awkward problems. Since the Pro codebase depends on this
--- code as a library, it has to do gymnastics to ensure that this library always gets recompiled in
--- order to use the updated version, and that’s really hacky.
+-- | Lots of random things need access to the current version. It would be very
+-- convenient to define @version :: 'Version'@ in this module and export it,
+-- and indeed, that’s what we used to do! But that turns out to cause problems:
+-- the version is compiled into the executable via Template Haskell, so the Pro
+-- codebase runs into awkward problems. Since the Pro codebase depends on this
+-- code as a library, it has to do gymnastics to ensure that this library
+-- always gets recompiled in order to use the updated version, and that’s
+-- really hacky.
 --
--- A better solution is to explicitly plumb the version through to everything that needs it, but
--- that would be noisy, so as a compromise we use an implicit parameter. Since implicit parameters
--- are a little cumbersome, we hide the parameter itself behind this 'HasVersion' constraint,
--- 'currentVersion' can be used to access it, and 'withVersion' can be used to bring a version into
--- scope.
+-- A better solution is to explicitly plumb the version through to everything
+-- that needs it, but that would be noisy, so as a compromise we use an
+-- implicit parameter. Since implicit parameters are a little cumbersome, we
+-- hide the parameter itself behind this 'HasVersion' constraint,
+-- 'currentVersion' can be used to access it, and 'withVersion' can be used to
+-- bring a version into scope.
 type HasVersion = ?version :: Version
 
 currentVersion :: HasVersion => Version

@@ -23,6 +23,7 @@ import qualified Data.HashSet                          as Set
 import qualified Data.Sequence                         as Seq
 
 import qualified Data.Text                             as T
+import qualified Data.List.Extended                    as L
 import qualified Language.GraphQL.Draft.Syntax         as G
 
 import           Hasura.GraphQL.Context
@@ -31,7 +32,6 @@ import           Hasura.GraphQL.Validate.Types
 import           Hasura.Prelude
 import           Hasura.RQL.DML.Internal               (mkAdminRolePermInfo)
 import           Hasura.RQL.Types
-import           Hasura.Server.Utils                   (duplicates)
 import           Hasura.SQL.Types
 
 import           Hasura.GraphQL.Schema.Action
@@ -748,9 +748,9 @@ mkGCtxMap annotatedObjects tableCache functionCache actionCache = do
 
     combineRootFields :: [RootFields] -> m RootFields
     combineRootFields rootFields = do
-      let duplicateQueryFields = duplicates $
+      let duplicateQueryFields = L.duplicates $
             concatMap (Map.keys . _rootQueryFields) rootFields
-          duplicateMutationFields = duplicates $
+          duplicateMutationFields = L.duplicates $
             concatMap (Map.keys . _rootMutationFields) rootFields
 
       -- TODO: The following exception should result in inconsistency

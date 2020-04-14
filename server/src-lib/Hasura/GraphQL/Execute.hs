@@ -46,9 +46,6 @@ import           Hasura.HTTP
 import           Hasura.Prelude
 import           Hasura.RQL.DDL.Headers
 import           Hasura.RQL.Types
-import           Hasura.Server.Context
-import           Hasura.Server.Utils                    (RequestId, mkClientHeadersForward,
-                                                         mkSetCookieHeaders)
 import           Hasura.Server.Version                  (HasVersion)
 
 import qualified Hasura.GraphQL.Execute.LiveQuery       as EL
@@ -393,7 +390,7 @@ execRemoteGQ reqId userInfo reqHdrs q rsi opDef = do
   when (opTy == G.OperationTypeSubscription) $
     throw400 NotSupported "subscription to remote server is not supported"
   confHdrs <- makeHeadersFromConf hdrConf
-  let clientHdrs = bool [] (mkClientHeadersForward reqHdrs) fwdClientHdrs
+  let clientHdrs = bool [] (mkUpstreamRequestHeaders reqHdrs) fwdClientHdrs
       -- filter out duplicate headers
       -- priority: conf headers > resolved userinfo vars > client headers
       hdrMaps    = [ Map.fromList confHdrs
@@ -414,7 +411,8 @@ execRemoteGQ reqId userInfo reqHdrs q rsi opDef = do
   L.unLogger logger $ QueryLog q Nothing reqId
   (time, res)  <- withElapsedTime $ liftIO $ try $ HTTP.httpLbs req manager
   resp <- either httpThrow return res
-  let !httpResp = HttpResponse (encJFromLBS $ resp ^. Wreq.responseBody) $ mkSetCookieHeaders resp
+  let !httpResp = HttpResponse (encJFromLBS $ resp ^. Wreq.responseBody) $
+                  getSetCookieHeaders resp
   return (time, httpResp)
 
   where

@@ -11,8 +11,7 @@ import           Hasura.GraphQL.Logging
 import           Hasura.GraphQL.Transport.HTTP.Protocol
 import           Hasura.Prelude
 import           Hasura.RQL.Types
-import           Hasura.Server.Context
-import           Hasura.Server.Utils                    (RequestId)
+import           Hasura.HTTP
 import           Hasura.Server.Version                  (HasVersion)
 
 import qualified Database.PG.Query                      as Q

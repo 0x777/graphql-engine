@@ -11,6 +11,8 @@ import qualified Data.Text.Encoding               as TE
 import qualified Database.PG.Query                as Q
 import qualified Language.Haskell.TH.Syntax       as TH
 import qualified Text.PrettyPrint.ANSI.Leijen     as PP
+import qualified Data.UUID                        as UUID
+import qualified Data.UUID.V4                     as UUID
 
 import           Data.Char                        (toLower)
 import           Data.FileEmbed                   (embedStringFile)
@@ -30,7 +32,6 @@ import           Hasura.RQL.Types                 (QErr, RoleName (..), SchemaCa
 import           Hasura.Server.Auth
 import           Hasura.Server.Cors
 import           Hasura.Server.Logging
-import           Hasura.Server.Utils
 import           Network.URI                      (parseURI)
 
 newtype DbUid
@@ -55,7 +56,7 @@ newtype InstanceId
   deriving (Show, Eq, J.ToJSON, J.FromJSON, Q.FromCol, Q.ToPrepArg)
 
 generateInstanceId :: IO InstanceId
-generateInstanceId = InstanceId <$> generateFingerprint
+generateInstanceId = InstanceId . UUID.toText <$> UUID.nextRandom
 
 data StartupTimeInfo
   = StartupTimeInfo
@@ -491,7 +492,7 @@ serveCmdFooter =
         , "Max event threads"
         )
       , ( "HASURA_GRAPHQL_EVENTS_FETCH_INTERVAL"
-        , "Interval in milliseconds to sleep before trying to fetch events again after a " 
+        , "Interval in milliseconds to sleep before trying to fetch events again after a "
           <> "fetch returned no events from postgres."
         )
       ]
@@ -1090,17 +1091,17 @@ serveOptionsParser =
 -- | This implements the mapping between application versions
 -- and catalog schema versions.
 downgradeShortcuts :: [(String, String)]
-downgradeShortcuts = 
+downgradeShortcuts =
   $(do let s = $(embedStringFile "src-rsr/catalog_versions.txt")
-          
+
            parseVersions = map (parseVersion . words) . lines
-     
+
            parseVersion [tag, version] = (tag, version)
            parseVersion other = error ("unrecognized tag/catalog mapping " ++ show other)
-       TH.lift (parseVersions s))     
+       TH.lift (parseVersions s))
 
 downgradeOptionsParser :: Parser DowngradeOptions
-downgradeOptionsParser = 
+downgradeOptionsParser =
     DowngradeOptions
     <$> choice
         (strOption
@@ -1115,7 +1116,7 @@ downgradeOptionsParser =
           help "Don't run any migrations, just print out the SQL."
         )
   where
-    shortcut v catalogVersion = 
+    shortcut v catalogVersion =
       flag' (DataString.fromString catalogVersion)
         ( long ("to-" <> v) <>
           help ("Downgrade to graphql-engine version " <> v <> " (equivalent to --to-catalog-version " <> catalogVersion <> ")")

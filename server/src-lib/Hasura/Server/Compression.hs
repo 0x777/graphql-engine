@@ -7,7 +7,7 @@ where
 
 import           Hasura.Prelude
 
-import           Hasura.Server.Utils       (gzipHeader)
+import           Hasura.HTTP (gzipHeader)
 
 import qualified Codec.Compression.GZip    as GZ
 import qualified Data.ByteString.Lazy      as BL

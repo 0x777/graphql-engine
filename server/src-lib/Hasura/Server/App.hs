@@ -37,6 +37,7 @@ import qualified Text.Mustache                          as M
 import qualified Web.Spock.Core                         as Spock
 
 import           Hasura.EncJSON
+import           Hasura.HTTP
 import           Hasura.Prelude                         hiding (get, put)
 import           Hasura.RQL.DDL.Schema
 import           Hasura.RQL.Types
@@ -44,7 +45,6 @@ import           Hasura.RQL.Types.Run
 import           Hasura.Server.Auth                     (AuthMode (..), UserAuthentication (..))
 import           Hasura.Server.Compression
 import           Hasura.Server.Config                   (runGetConfig)
-import           Hasura.Server.Context
 import           Hasura.Server.Cors
 import           Hasura.Server.Init
 import           Hasura.Server.Logging
@@ -284,7 +284,7 @@ mkSpockAction serverCtx qErrEncoder qErrModifier apiHandler = do
         let (compressedResp, mEncodingHeader, mCompressionType) =
               compressResponse (Wai.requestHeaders req) respBytes
             encodingHeader = maybe [] pure mEncodingHeader
-            reqIdHeader = (requestIdHeader, txtToBs $ unRequestId reqId)
+            reqIdHeader = mkRequestIdHeader reqId
             allRespHeaders = pure reqIdHeader <> encodingHeader <> respHeaders
         lift $ logHttpSuccess logger userInfo reqId req reqBody respBytes compressedResp qTime mCompressionType reqHeaders
         mapM_ setHeader allRespHeaders
