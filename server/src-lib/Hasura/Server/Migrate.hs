@@ -62,7 +62,7 @@ data MigrationResult
   deriving (Show, Eq)
 
 instance ToEngineLog MigrationResult Hasura where
-  toEngineLog result = toEngineLog $ StartupLog
+  toEngineLog options result = toEngineLog options $ StartupLog
     { slLogLevel = LevelInfo
     , slKind = "db_migrate"
     , slInfo = A.toJSON $ case result of

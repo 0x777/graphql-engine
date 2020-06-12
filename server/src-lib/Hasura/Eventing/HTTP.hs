@@ -150,10 +150,10 @@ data HTTPResp (a :: TriggerTypes)
 $(deriveToJSON (aesonDrop 3 snakeCase){omitNothingFields=True} ''HTTPResp)
 
 instance ToEngineLog (HTTPResp 'EventType) Hasura where
-  toEngineLog resp = (LevelInfo, eventTriggerLogType, toJSON resp)
+  toEngineLog _ resp = (LevelInfo, eventTriggerLogType, toJSON resp)
 
 instance ToEngineLog (HTTPResp 'ScheduledType) Hasura where
-  toEngineLog resp = (LevelInfo, scheduledTriggerLogType, toJSON resp)
+  toEngineLog _ resp = (LevelInfo, scheduledTriggerLogType, toJSON resp)
 
 data HTTPErr (a :: TriggerTypes)
   = HClient !HTTP.HttpException
@@ -178,10 +178,10 @@ instance ToJSON (HTTPErr a) where
                             , "detail" .= v]
 
 instance ToEngineLog (HTTPErr 'EventType) Hasura where
-  toEngineLog err = (LevelError, eventTriggerLogType, toJSON err)
+  toEngineLog _ err = (LevelError, eventTriggerLogType, toJSON err)
 
 instance ToEngineLog (HTTPErr 'ScheduledType) Hasura where
-  toEngineLog err = (LevelError, scheduledTriggerLogType, toJSON err)
+  toEngineLog _ err = (LevelError, scheduledTriggerLogType, toJSON err)
 
 mkHTTPResp :: HTTP.Response LBS.ByteString -> HTTPResp a
 mkHTTPResp resp =
@@ -214,10 +214,10 @@ instance ToJSON (HTTPRespExtra a) where
                ]
 
 instance ToEngineLog (HTTPRespExtra 'EventType) Hasura where
-  toEngineLog resp = (LevelInfo, eventTriggerLogType, toJSON resp)
+  toEngineLog _ resp = (LevelInfo, eventTriggerLogType, toJSON resp)
 
 instance ToEngineLog (HTTPRespExtra 'ScheduledType) Hasura where
-  toEngineLog resp = (LevelInfo, scheduledTriggerLogType, toJSON resp)
+  toEngineLog _ resp = (LevelInfo, scheduledTriggerLogType, toJSON resp)
 
 isNetworkError :: HTTPErr a -> Bool
 isNetworkError = \case
@@ -252,7 +252,7 @@ data HTTPReq
 $(deriveJSON (aesonDrop 4 snakeCase){omitNothingFields=True} ''HTTPReq)
 
 instance ToEngineLog HTTPReq Hasura where
-  toEngineLog req = (LevelInfo, eventTriggerLogType, toJSON req)
+  toEngineLog _ req = (LevelInfo, eventTriggerLogType, toJSON req)
 
 logHTTPForET
   :: ( MonadReader r m

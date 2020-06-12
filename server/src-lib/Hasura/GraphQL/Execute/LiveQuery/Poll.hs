@@ -381,7 +381,7 @@ pollDetailMinimal (PollDetails{..}) =
            ]
 
 instance L.ToEngineLog PollDetails L.Hasura where
-  toEngineLog pl = (L.LevelInfo, L.ELTLivequeryPollerLog, pollDetailMinimal pl)
+  toEngineLog _ pl = (L.LevelInfo, L.ELTLivequeryPollerLog, pollDetailMinimal pl)
 
 -- | Where the magic happens: the top-level action run periodically by each
 -- active 'Poller'. This needs to be async exception safe.

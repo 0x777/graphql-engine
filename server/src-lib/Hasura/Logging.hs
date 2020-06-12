@@ -59,6 +59,8 @@ class (Eq (EngineLogType impl), Hashable (EngineLogType impl)) => EnabledLogType
 -- | A family of EngineLogType types
 data family EngineLogType impl
 
+type family EngineLogOptions impl
+
 data Hasura
 
 data instance EngineLogType Hasura
@@ -71,6 +73,8 @@ data instance EngineLogType Hasura
   -- internal log types
   | ELTInternal !InternalLogTypes
   deriving (Show, Eq, Generic)
+
+type instance EngineLogOptions Hasura = ()
 
 instance Hashable (EngineLogType Hasura)
 
@@ -191,7 +195,7 @@ instance J.ToJSON (EngineLogType impl) => J.ToJSON (EngineLog impl) where
 -- | Typeclass representing any data type that can be converted to @EngineLog@ for the purpose of
 -- logging
 class EnabledLogTypes impl => ToEngineLog a impl where
-  toEngineLog :: a -> (LogLevel, EngineLogType impl, J.Value)
+  toEngineLog :: EngineLogOptions impl -> a -> (LogLevel, EngineLogType impl, J.Value)
 
 
 data UnstructuredLog
@@ -208,7 +212,7 @@ debugLBS :: BL.ByteString -> UnstructuredLog
 debugLBS = UnstructuredLog LevelDebug . TBS.fromLBS
 
 instance ToEngineLog UnstructuredLog Hasura where
-  toEngineLog (UnstructuredLog level t) =
+  toEngineLog _ (UnstructuredLog level t) =
     (level, ELTInternal ILTUnstructured, J.toJSON t)
 
 data LoggerCtx impl
@@ -268,7 +272,7 @@ newtype Logger impl
 mkLogger :: LoggerCtx Hasura -> Logger Hasura
 mkLogger (LoggerCtx loggerSet serverLogLevel timeGetter enabledLogTypes) = Logger $ \l -> do
   localTime <- liftIO timeGetter
-  let (logLevel, logTy, logDet) = toEngineLog l
+  let (logLevel, logTy, logDet) = toEngineLog () l
   when (logLevel >= serverLogLevel && isLogTypeEnabled enabledLogTypes logTy) $
     liftIO $ FL.pushLogStrLn loggerSet $ FL.toLogStr (J.encode $ EngineLog localTime logLevel logTy logDet)
 

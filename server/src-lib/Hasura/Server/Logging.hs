@@ -47,7 +47,7 @@ instance ToJSON StartupLog where
            ]
 
 instance ToEngineLog StartupLog Hasura where
-  toEngineLog startupLog =
+  toEngineLog _ startupLog =
     (slLogLevel startupLog, ELTStartup, toJSON startupLog)
 
 data PGLog
@@ -61,7 +61,7 @@ instance ToJSON PGLog where
     object ["message" .= msg]
 
 instance ToEngineLog PGLog Hasura where
-  toEngineLog pgLog =
+  toEngineLog _ pgLog =
     (plLogLevel pgLog, ELTInternal ILTPgClient, toJSON pgLog)
 
 data MetadataLog
@@ -78,7 +78,7 @@ instance ToJSON MetadataLog where
            ]
 
 instance ToEngineLog MetadataLog Hasura where
-  toEngineLog ml =
+  toEngineLog _ ml =
     (mlLogLevel ml, ELTInternal ILTMetadata, toJSON ml)
 
 mkInconsMetadataLog :: [InconsistentMetadata] -> MetadataLog
@@ -98,7 +98,7 @@ data WebHookLog
   } deriving (Show)
 
 instance ToEngineLog WebHookLog Hasura where
-  toEngineLog webHookLog =
+  toEngineLog _ webHookLog =
     (whlLogLevel webHookLog, ELTWebhookLog, toJSON webHookLog)
 
 instance ToJSON WebHookLog where
@@ -279,7 +279,7 @@ data HttpLogLine
   }
 
 instance ToEngineLog HttpLogLine Hasura where
-  toEngineLog (HttpLogLine logLevel logLine) =
+  toEngineLog _ (HttpLogLine logLevel logLine) =
     (logLevel, ELTHttpLog, toJSON logLine)
 
 mkHttpLog :: HttpLogContext -> HttpLogLine

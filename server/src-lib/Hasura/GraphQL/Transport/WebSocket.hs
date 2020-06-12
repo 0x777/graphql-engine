@@ -186,7 +186,7 @@ data WSLog
   }
 
 instance L.ToEngineLog WSLog L.Hasura where
-  toEngineLog (WSLog logLevel wsLog) =
+  toEngineLog _ (WSLog logLevel wsLog) =
     (logLevel, L.ELTWebsocketLog, J.toJSON wsLog)
 
 mkWsInfoLog :: Maybe SessionVariables -> WsConnInfo -> WSEvent -> WSLog

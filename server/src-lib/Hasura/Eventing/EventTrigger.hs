@@ -84,7 +84,7 @@ newtype EventInternalErr
   deriving (Show, Eq)
 
 instance L.ToEngineLog EventInternalErr L.Hasura where
-  toEngineLog (EventInternalErr qerr) = (L.LevelError, L.eventTriggerLogType, toJSON qerr)
+  toEngineLog _ (EventInternalErr qerr) = (L.LevelError, L.eventTriggerLogType, toJSON qerr)
 
 -- | Change data for a particular row
 --

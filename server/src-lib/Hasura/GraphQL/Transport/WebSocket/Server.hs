@@ -103,7 +103,7 @@ $(J.deriveToJSON
   ''WSLog)
 
 instance L.ToEngineLog WSLog L.Hasura where
-  toEngineLog wsLog =
+  toEngineLog _ wsLog =
     (L.LevelDebug, L.ELTInternal L.ILTWsServer, J.toJSON wsLog)
 
 data WSQueueResponse

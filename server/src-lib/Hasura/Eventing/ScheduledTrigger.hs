@@ -102,7 +102,7 @@ newtype ScheduledTriggerInternalErr
   deriving (Show, Eq)
 
 instance L.ToEngineLog ScheduledTriggerInternalErr L.Hasura where
-  toEngineLog (ScheduledTriggerInternalErr qerr) =
+  toEngineLog _ (ScheduledTriggerInternalErr qerr) =
     (L.LevelError, L.scheduledTriggerLogType, J.toJSON qerr)
 
 cronEventsTable :: QualifiedTable

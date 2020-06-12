@@ -35,7 +35,7 @@ instance J.ToJSON QueryLog where
              ]
 
 instance L.ToEngineLog QueryLog L.Hasura where
-  toEngineLog ql = (L.LevelInfo, L.ELTQueryLog, J.toJSON ql)
+  toEngineLog _ ql = (L.LevelInfo, L.ELTQueryLog, J.toJSON ql)
 
 -- | Helper function to convert the list of alias to generated SQL into a
 -- | key-value map to be printed as JSON

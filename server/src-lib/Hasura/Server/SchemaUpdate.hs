@@ -56,7 +56,7 @@ instance ToJSON SchemaSyncThreadLog where
            ]
 
 instance ToEngineLog SchemaSyncThreadLog Hasura where
-  toEngineLog threadLog =
+  toEngineLog _ threadLog =
     (suelLogLevel threadLog, ELTInternal ILTSchemaSyncThread, toJSON threadLog)
 
 data EventPayload
