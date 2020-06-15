@@ -345,12 +345,12 @@ resolveAsyncActionQuery userInfo selectOpCtx field = do
 
     mkTableBoolExpression actionId =
       let actionIdColumnInfo = PGColumnInfo (unsafePGCol "id") "id" 0 (PGColumnScalar PGUUID) False Nothing
-          actionIdColumnEq = BoolFld $ AVCol actionIdColumnInfo [AEQ True actionId]
+          actionIdColumnEq = BoolFld $ AVCol actionIdColumnInfo [AEQ actionId]
           sessionVarsColumnInfo = PGColumnInfo (unsafePGCol "session_variables") "session_variables"
                                   0 (PGColumnScalar PGJSONB) False Nothing
           sessionVarValue = UVPG $ AnnPGVal Nothing False $ WithScalarType PGJSONB
                             $ PGValJSONB $ Q.JSONB $ J.toJSON $ _uiSession userInfo
-          sessionVarsColumnEq = BoolFld $ AVCol sessionVarsColumnInfo [AEQ True sessionVarValue]
+          sessionVarsColumnEq = BoolFld $ AVCol sessionVarsColumnInfo [AEQ sessionVarValue]
 
       -- For non-admin roles, accessing an async action's response should be allowed only for the user
       -- who initiated the action through mutation. The action's response is accessible for a query/subscription

@@ -797,7 +797,7 @@ convertNodeSelect selOpCtx pkeyColumnValues field =
                            parsePGScalarValue (pgiType columnInfo) jsonValue
     -- Generate the bool expression from the primary key column values
     let pkeyBoolExp = BoolAnd $ flip map (Map.elems unresolvedPkeyValues) $
-          \(unresolvedValue, columnInfo) -> (BoolFld . AVCol columnInfo) [AEQ True unresolvedValue]
+          \(unresolvedValue, columnInfo) -> (BoolFld . AVCol columnInfo) [AEQ unresolvedValue]
         selectArgs = RS.noSelectArgs{RS._saWhere = Just pkeyBoolExp}
     strfyNum <- stringifyNum <$> asks getter
     pure $ RS.AnnSelectG annFields (RS.FromTable table) tablePerm selectArgs strfyNum

@@ -28,9 +28,9 @@ parseOpExps colTy annVal = do
     case k of
       "_cast"     -> fmap ACast <$> parseCastExpression v
 
-      "_eq"       -> fmap (AEQ True) <$> asOpRhs v
-      "_ne"       -> fmap (ANE True) <$> asOpRhs v
-      "_neq"      -> fmap (ANE True) <$> asOpRhs v
+      "_eq"       -> fmap AEQ <$> asOpRhs v
+      "_ne"       -> fmap ANE <$> asOpRhs v
+      "_neq"      -> fmap ANE <$> asOpRhs v
       "_is_null"  -> resolveIsNull v
 
       "_in"       -> fmap AIN <$> asPGArray colTy v
@@ -201,7 +201,7 @@ pgColValToBoolExp
 pgColValToBoolExp colArgMap colValMap = do
   colExps <- forM colVals $ \(name, val) ->
     BoolFld <$> do
-      opExp <- AEQ True . mkParameterizablePGValue <$> asPGColumnValue val
+      opExp <- AEQ . mkParameterizablePGValue <$> asPGColumnValue val
       colInfo <- onNothing (Map.lookup name colArgMap) $
         throw500 $ "column name " <> showName name
         <> " not found in column arguments map"

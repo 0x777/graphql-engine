@@ -53,7 +53,7 @@ parseOperationsExpression rhsParser fim columnInfo =
     parseOperations :: ColumnReference -> Value -> m [OpExpG v]
     parseOperations column = \case
       Object o -> mapM (parseOperation column) (M.toList o)
-      val      -> pure . AEQ False <$> rhsParser columnType val
+      val      -> pure . AEQ <$> rhsParser columnType val
       where
         columnType = PGTypeScalar $ columnReferenceType column
 
@@ -63,13 +63,13 @@ parseOperationsExpression rhsParser fim columnInfo =
         "$cast"          -> parseCast
         "_cast"          -> parseCast
 
-        "$eq"            -> parseEq
-        "_eq"            -> parseEq
+        "$eq"            -> parseEq val
+        "_eq"            -> parseEq val
 
-        "$ne"            -> parseNe
-        "_ne"            -> parseNe
-        "$neq"           -> parseNe
-        "_neq"           -> parseNe
+        "$ne"            -> parseNe val
+        "_ne"            -> parseNe val
+        "$neq"           -> parseNe val
+        "_neq"           -> parseNe val
 
         "$in"            -> parseIn
         "_in"            -> parseIn
@@ -165,8 +165,12 @@ parseOperationsExpression rhsParser fim columnInfo =
       where
         colTy = columnReferenceType column
 
-        parseEq       = AEQ False <$> parseOne -- equals
-        parseNe       = ANE False <$> parseOne -- <>
+        parseEq = \case
+          Null -> pure ANISNULL
+          _    -> AEQ <$> parseOne -- equals
+        parseNe = \case
+          Null -> pure ANISNOTNULL
+          _    -> ANE <$> parseOne
         parseIn       = AIN <$> parseManyWithType colTy -- in an array
         parseNin      = ANIN <$> parseManyWithType colTy -- not in an array
         parseGt       = AGT <$> parseOne -- >
@@ -254,22 +258,6 @@ parseOperationsExpression rhsParser fim columnInfo =
 
         parseVal :: (FromJSON a) => m a
         parseVal = decodeValue val
-
--- This convoluted expression instead of col = val
--- to handle the case of col : null
-equalsBoolExpBuilder :: S.SQLExp -> S.SQLExp -> S.BoolExp
-equalsBoolExpBuilder qualColExp rhsExp =
-  S.BEBin S.OrOp (S.BECompare S.SEQ qualColExp rhsExp)
-    (S.BEBin S.AndOp
-      (S.BENull qualColExp)
-      (S.BENull rhsExp))
-
-notEqualsBoolExpBuilder :: S.SQLExp -> S.SQLExp -> S.BoolExp
-notEqualsBoolExpBuilder qualColExp rhsExp =
-  S.BEBin S.OrOp (S.BECompare S.SNE qualColExp rhsExp)
-    (S.BEBin S.AndOp
-      (S.BENotNull qualColExp)
-      (S.BENull rhsExp))
 
 annBoolExp
   :: (QErrM m, TableCoreInfoRM m)
@@ -385,10 +373,8 @@ mkFieldCompExp qual lhsField = mkCompExp (mkQField lhsField)
     mkCompExp :: S.SQLExp -> OpExpG S.SQLExp -> S.BoolExp
     mkCompExp lhs = \case
       ACast casts      -> mkCastsExp casts
-      AEQ False val    -> equalsBoolExpBuilder lhs val
-      AEQ True val     -> S.BECompare S.SEQ lhs val
-      ANE False val    -> notEqualsBoolExpBuilder lhs val
-      ANE True  val    -> S.BECompare S.SNE lhs val
+      AEQ val          -> S.BECompare S.SEQ lhs val
+      ANE val          -> S.BECompare S.SNE lhs val
 
       AIN val          -> S.BECompareAny S.SEQ lhs val
       ANIN val         -> S.BENot $ S.BECompareAny S.SEQ lhs val

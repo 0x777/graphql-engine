@@ -183,8 +183,8 @@ type CastExp a = M.HashMap PGScalarType [OpExpG a]
 data OpExpG a
   = ACast !(CastExp a)
 
-  | AEQ !Bool !a
-  | ANE !Bool !a
+  | AEQ !a
+  | ANE !a
 
   | AIN  !a
   | ANIN !a
@@ -251,8 +251,8 @@ opExpToJPair :: (a -> Value) -> OpExpG a -> (Text, Value)
 opExpToJPair f = \case
   ACast a        -> ("_cast", toJSON $ M.map opExpsToJSON a)
 
-  AEQ _ a          -> ("_eq", f a)
-  ANE _ a          -> ("_ne", f a)
+  AEQ a          -> ("_eq", f a)
+  ANE a          -> ("_ne", f a)
 
   AIN a          -> ("_in", f a)
   ANIN a         -> ("_nin", f a)
