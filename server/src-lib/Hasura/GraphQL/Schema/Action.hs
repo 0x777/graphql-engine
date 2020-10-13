@@ -209,7 +209,7 @@ actionOutputFields outputObject = do
               ]
         in case relType of
               ObjRel -> RQL.AFObjectRelation $ RQL.AnnRelationSelectG tableRelName columnMapping $
-                        RQL.AnnObjectSelectG (RQL._asnFields selectExp) tableName $
+                        RQL.mkAnnObjectSelectG False (RQL._asnFields selectExp) tableName $
                         RQL._tpFilter $ RQL._asnPerm selectExp
               ArrRel -> RQL.AFArrayRelation $ RQL.ASSimple $
                         RQL.AnnRelationSelectG tableRelName columnMapping selectExp

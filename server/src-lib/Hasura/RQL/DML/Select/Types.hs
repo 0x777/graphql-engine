@@ -116,10 +116,20 @@ type ArrayAggregateSelect = ArrayAggregateSelectG S.SQLExp
 
 data AnnObjectSelectG v
   = AnnObjectSelectG
-  { _aosFields      :: !(AnnFieldsG v)
+  { _aosIsNullable  :: !S.JoinType
+  , _aosFields      :: !(AnnFieldsG v)
   , _aosTableFrom   :: !QualifiedTable
   , _aosTableFilter :: !(AnnBoolExp v)
   } deriving (Show, Eq)
+
+objectRelationJoinType :: Bool -> S.JoinType
+objectRelationJoinType = \case
+  False -> S.Inner
+  True -> S.LeftOuter
+
+mkAnnObjectSelectG :: Bool -> AnnFieldsG v -> QualifiedTable -> AnnBoolExp v -> AnnObjectSelectG v
+mkAnnObjectSelectG isNullable =
+  AnnObjectSelectG (objectRelationJoinType isNullable)
 
 type AnnObjectSelect = AnnObjectSelectG S.SQLExp
 
@@ -127,8 +137,8 @@ traverseAnnObjectSelect
   :: (Applicative f)
   => (a -> f b)
   -> AnnObjectSelectG a -> f (AnnObjectSelectG b)
-traverseAnnObjectSelect f (AnnObjectSelectG fields fromTable permissionFilter) =
-  AnnObjectSelectG
+traverseAnnObjectSelect f (AnnObjectSelectG joinType fields fromTable permissionFilter) =
+  AnnObjectSelectG joinType
   <$> traverseAnnFields f fields
   <*> pure fromTable
   <*> traverseAnnBoolExp f permissionFilter
@@ -563,6 +573,10 @@ objectSelectSourceToSelectSource ObjectSelectSource{..} =
 data ObjectRelationSource
   = ObjectRelationSource
   { _orsRelationshipName :: !RelName
+  , _orsRelationJoinType :: !S.JoinType
+  -- ^ an inner join can be used when joining for object relationships
+  -- in the case where the join columns are all non-nullable and have
+  -- a foreign key constraint to the remote table.
   , _orsRelationMapping  :: !(HM.HashMap PGCol PGCol)
   , _orsSelectSource     :: !ObjectSelectSource
   } deriving (Show, Eq, Generic)

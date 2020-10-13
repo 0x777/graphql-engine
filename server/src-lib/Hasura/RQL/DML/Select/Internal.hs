@@ -635,7 +635,7 @@ processOrderByItems sourcePrefix' fieldAlias' similarArrayFields orderByItems = 
           S.mkQIdenExp (mkBaseTableAlias sourcePrefix) $ toIden $ pgiColumn pgColInfo
 
         AOCObjectRelation relInfo relFilter rest -> withWriteObjectRelation $ do
-          let RelInfo relName _ colMapping relTable _ _ = relInfo
+          let RelInfo relName _ colMapping relTable isNullable _ = relInfo
               relSourcePrefix = mkObjectRelationTableAlias sourcePrefix relName
               fieldName = mkOrderByFieldName relName
           (relOrderByAlias, relOrdByExp) <-
@@ -643,7 +643,7 @@ processOrderByItems sourcePrefix' fieldAlias' similarArrayFields orderByItems = 
           let selectSource = ObjectSelectSource relSourcePrefix
                              (S.FISimple relTable Nothing)
                              (toSQLBoolExp (S.QualTable relTable) relFilter)
-              relSource = ObjectRelationSource relName colMapping selectSource
+              relSource = ObjectRelationSource relName (objectRelationJoinType isNullable) colMapping selectSource
           pure ( relSource
                , HM.singleton relOrderByAlias relOrdByExp
                , S.mkQIdenExp relSourcePrefix relOrderByAlias
@@ -741,14 +741,14 @@ processAnnFields sourcePrefix fieldAlias similarArrFields annFields = do
 
       AFObjectRelation objSel -> withWriteObjectRelation $ do
         let AnnRelationSelectG relName relMapping annObjSel = objSel
-            AnnObjectSelectG objAnnFields tableFrom tableFilter = annObjSel
+            AnnObjectSelectG joinType objAnnFields tableFrom tableFilter = annObjSel
             objRelSourcePrefix = mkObjectRelationTableAlias sourcePrefix relName
             sourcePrefixes = mkSourcePrefixes objRelSourcePrefix
         annFieldsExtr <- processAnnFields (_pfThis sourcePrefixes) fieldName HM.empty objAnnFields
         let selectSource = ObjectSelectSource (_pfThis sourcePrefixes)
                            (S.FISimple tableFrom Nothing)
                            (toSQLBoolExp (S.QualTable tableFrom) tableFilter)
-            objRelSource = ObjectRelationSource relName relMapping selectSource
+            objRelSource = ObjectRelationSource relName joinType relMapping selectSource
         pure ( objRelSource
              , HM.fromList [annFieldsExtr]
              , S.mkQIdenExp objRelSourcePrefix fieldName
@@ -863,8 +863,8 @@ generateSQLSelect joinCondition selectSource selectNode =
     baseFromItem = S.mkSelFromItem baseSelect baseSelectAlias
 
     -- function to create a joined from item from two from items
-    leftOuterJoin current new =
-      S.FIJoin $ S.JoinExpr current S.LeftOuter new $
+    leftOuterJoin current (joinType, new) =
+      S.FIJoin $ S.JoinExpr current joinType new $
       S.JoinOn $ S.BELit True
 
     -- this is the from eexp for the final select
@@ -877,32 +877,32 @@ generateSQLSelect joinCondition selectSource selectNode =
 
 
     objectRelationToFromItem
-      :: (ObjectRelationSource, SelectNode) -> S.FromItem
+      :: (ObjectRelationSource, SelectNode) -> (S.JoinType, S.FromItem)
     objectRelationToFromItem (objectRelationSource, node) =
-      let ObjectRelationSource _ colMapping objectSelectSource = objectRelationSource
+      let ObjectRelationSource _ joinType colMapping objectSelectSource = objectRelationSource
           alias = S.Alias $ _ossPrefix objectSelectSource
           source = objectSelectSourceToSelectSource objectSelectSource
           select = generateSQLSelect (mkJoinCond baseSelectAlias colMapping) source node
-      in S.mkLateralFromItem select alias
+      in (joinType, S.mkLateralFromItem select alias)
 
     arrayRelationToFromItem
-      :: (ArrayRelationSource, ArraySelectNode) -> S.FromItem
+      :: (ArrayRelationSource, ArraySelectNode) -> (S.JoinType, S.FromItem)
     arrayRelationToFromItem (arrayRelationSource, arraySelectNode) =
       let ArrayRelationSource _ colMapping source = arrayRelationSource
           alias = S.Alias $ _ssPrefix source
           select = generateSQLSelectFromArrayNode source arraySelectNode $
                    mkJoinCond baseSelectAlias colMapping
-      in S.mkLateralFromItem select alias
+      in (S.LeftOuter, S.mkLateralFromItem select alias)
 
     arrayConnectionToFromItem
-      :: (ArrayConnectionSource, ArraySelectNode) -> S.FromItem
+      :: (ArrayConnectionSource, ArraySelectNode) -> (S.JoinType, S.FromItem)
     arrayConnectionToFromItem (arrayConnectionSource, arraySelectNode) =
       let selectWith = connectionToSelectWith baseSelectAlias arrayConnectionSource arraySelectNode
           alias = S.Alias $ _ssPrefix $ _acsSource arrayConnectionSource
-      in S.FISelectWith (S.Lateral True) selectWith alias
+      in (S.LeftOuter, S.FISelectWith (S.Lateral True) selectWith alias)
 
     computedFieldToFromItem
-      :: (ComputedFieldTableSetSource, SelectNode) -> S.FromItem
+      :: (ComputedFieldTableSetSource, SelectNode) -> (S.JoinType, S.FromItem)
     computedFieldToFromItem (computedFieldTableSource, node) =
       let ComputedFieldTableSetSource fieldName selectTy source = computedFieldTableSource
           internalSelect = generateSQLSelect (S.BELit True) source node
@@ -913,7 +913,7 @@ generateSQLSelect joinCondition selectSource selectNode =
                 { S.selExtr = [extractor]
                 , S.selFrom = Just $ S.FromExp [S.mkSelFromItem internalSelect alias]
                 }
-      in S.mkLateralFromItem select alias
+      in (S.LeftOuter, S.mkLateralFromItem select alias)
 
 generateSQLSelectFromArrayNode
   :: SelectSource

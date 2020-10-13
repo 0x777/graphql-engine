@@ -928,7 +928,7 @@ relationshipField relationshipInfo = runMaybeT do
       pure $ pure $ (if nullable then id else P.nonNullableField) $
         P.subselection_ relFieldName desc selectionSetParser
              <&> \fields -> RQL.AFObjectRelation $ RQL.AnnRelationSelectG relName colMapping $
-                    RQL.AnnObjectSelectG fields otherTable $
+                    RQL.mkAnnObjectSelectG nullable fields otherTable $
                     RQL._tpFilter $ tablePermissionsInfo remotePerms
     ArrRel -> do
       let arrayRelDesc = Just $ G.Description "An array relationship"

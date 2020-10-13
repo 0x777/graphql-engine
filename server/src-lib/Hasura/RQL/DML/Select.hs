@@ -234,14 +234,14 @@ convExtRel fieldInfoMap relName mAlias selQ sessVarBldr prepValBldr = do
   -- Point to the name key
   relInfo <- withPathK "name" $
     askRelType fieldInfoMap relName pgWhenRelErr
-  let (RelInfo _ relTy colMapping relTab _ _) = relInfo
+  let (RelInfo _ relTy colMapping relTab isNullable _) = relInfo
   (relCIM, relSPI) <- fetchRelDet relName relTab
   annSel <- convSelectQ relTab relCIM relSPI selQ sessVarBldr prepValBldr
   case relTy of
     ObjRel -> do
       when misused $ throw400 UnexpectedPayload objRelMisuseMsg
       return $ Left $ AnnRelationSelectG (fromMaybe relName mAlias) colMapping $
-        AnnObjectSelectG (_asnFields annSel) relTab $ _tpFilter $ _asnPerm annSel
+        mkAnnObjectSelectG isNullable (_asnFields annSel) relTab $ _tpFilter $ _asnPerm annSel
     ArrRel ->
       return $ Right $ ASSimple $ AnnRelationSelectG (fromMaybe relName mAlias)
                colMapping annSel
